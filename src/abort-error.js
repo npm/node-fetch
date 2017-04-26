@@ -10,7 +10,9 @@
  * @param   String      message      Error message for human
  * @return  AbortError
  */
-export default function AbortError(message) {
+module.exports = AbortError
+
+function AbortError(message) {
 	Error.call(this, message);
 
 	this.type = 'aborted';

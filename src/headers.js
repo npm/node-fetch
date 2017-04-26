@@ -1,3 +1,4 @@
+'use strict'
 
 /**
  * headers.js
@@ -41,14 +42,14 @@ function find(map, name) {
 }
 
 const MAP = Symbol('map');
-export default class Headers {
+class Headers {
 	/**
 	 * Headers class
 	 *
 	 * @param   Object  headers  Response headers
 	 * @return  Void
 	 */
-	constructor(init = undefined) {
+	constructor(init) {
 		this[MAP] = Object.create(null);
 
 		if (init instanceof Headers) {
@@ -127,11 +128,12 @@ export default class Headers {
 	 * @param   Boolean   thisArg   `this` context for callback function
 	 * @return  Void
 	 */
-	forEach(callback, thisArg = undefined) {
+	forEach(callback, thisArg) {
 		let pairs = getHeaders(this);
 		let i = 0;
 		while (i < pairs.length) {
-			const [name, value] = pairs[i];
+			const name = pairs[i][0]
+			const value = pairs[i][1]
 			callback.call(thisArg, value, name, this);
 			pairs = getHeaders(this);
 			i++;
@@ -260,7 +262,8 @@ Object.defineProperties(Headers.prototype, {
 	entries: { enumerable: true }
 });
 
-function getHeaders(headers, kind = 'key+value') {
+function getHeaders(headers, kind) {
+	if (kind == null) kind = 'key+value'
 	const keys = Object.keys(headers[MAP]).sort();
 	return keys.map(
 		kind === 'key' ?
@@ -291,11 +294,9 @@ const HeadersIteratorPrototype = Object.setPrototypeOf({
 			throw new TypeError('Value of `this` is not a HeadersIterator');
 		}
 
-		const {
-			target,
-			kind,
-			index
-		} = this[INTERNAL];
+		const target = this[INTERNAL].target
+		const kind = this[INTERNAL].kind
+		const index = this[INTERNAL].index
 		const values = getHeaders(target, kind);
 		const len = values.length;
 		if (index >= len) {
@@ -323,13 +324,15 @@ Object.defineProperty(HeadersIteratorPrototype, Symbol.toStringTag, {
 	configurable: true
 });
 
+module.exports = Headers
+
 /**
  * Export the Headers object in a form that Node.js can consume.
  *
  * @param   Headers  headers
  * @return  Object
  */
-export function exportNodeCompatibleHeaders(headers) {
+module.exports.exportNodeCompatibleHeaders = function exportNodeCompatibleHeaders(headers) {
 	const obj = Object.assign({ __proto__: null }, headers[MAP]);
 
 	// http.request() only supports string as Host header. This hack makes
@@ -349,7 +352,7 @@ export function exportNodeCompatibleHeaders(headers) {
  * @param   Object  obj  Object of headers
  * @return  Headers
  */
-export function createHeadersLenient(obj) {
+module.exports.createHeadersLenient = function createHeadersLenient(obj) {
 	const headers = new Headers();
 	for (const name of Object.keys(obj)) {
 		if (invalidTokenRegex.test(name)) {

@@ -1,3 +1,4 @@
+'use strict'
 
 /**
  * fetch-error.js
@@ -13,7 +14,8 @@
  * @param   String      systemError  For Node.js system error
  * @return  FetchError
  */
-export default function FetchError(message, type, systemError) {
+module.exports = FetchError
+function FetchError(message, type, systemError) {
 	Error.call(this, message);
 
 	this.message = message;

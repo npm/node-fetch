@@ -1,31 +1,32 @@
+'use strict'
 
 // test tools
-import chai from 'chai';
-import chaiPromised from 'chai-as-promised';
-import chaiIterator from 'chai-iterator';
-import chaiString from 'chai-string';
-import then from 'promise';
-import resumer from 'resumer';
-import FormData from 'form-data';
-import stringToArrayBuffer from 'string-to-arraybuffer';
-import URLSearchParams_Polyfill from 'url-search-params';
-import { URL } from 'whatwg-url';
-import { AbortController } from 'abortcontroller-polyfill/dist/abortcontroller';
-import AbortController2 from 'abort-controller';
+const chai = require('chai');
+const chaiPromised = require('chai-as-promised');
+const chaiIterator = require('chai-iterator');
+const chaiString = require('chai-string');
+const then = require('promise');
+const resumer = require('resumer');
+const FormData = require('form-data');
+const stringToArrayBuffer = require('string-to-arraybuffer');
+const URLSearchParams_Polyfill = require('url-search-params');
+const URL = require('whatwg-url').URL
+const AbortController = require('abortcontroller-polyfill/dist/abortcontroller').AbortController
+const AbortController2 = require('abort-controller')
 
-const { spawn } = require('child_process');
+const spawn = require('child_process').spawn;
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const stream = require('stream');
-const { parse: parseURL, URLSearchParams } = require('url');
-const { lookup } = require('dns');
+const parseURL = require('url').parse;
+const URLSearchParams = require('url').URLSearchParams;
+const lookup = require('dns').lookup;
 const vm = require('vm');
 
-const {
-	ArrayBuffer: VMArrayBuffer,
-	Uint8Array: VMUint8Array
-} = vm.runInNewContext('this');
+const ctx = vm.runInNewContext('this')
+const ArrayBuffer = ctx.VMArrayBuffer || Buffer
+const Uint8Array = ctx.VMUint8Array || Buffer
 
 let convert;
 try { convert = require('encoding').convert; } catch(e) { }
@@ -35,21 +36,20 @@ chai.use(chaiIterator);
 chai.use(chaiString);
 const expect = chai.expect;
 
-import TestServer from './server';
+const TestServer = require('./server');
 
 // test subjects
-import fetch, {
-	FetchError,
-	Headers,
-	Request,
-	Response
-} from '../src/';
-import FetchErrorOrig from '../src/fetch-error.js';
-import HeadersOrig from '../src/headers.js';
-import RequestOrig from '../src/request.js';
-import ResponseOrig from '../src/response.js';
-import Body from '../src/body.js';
-import Blob from '../src/blob.js';
+const fetch = require('../src/')
+const FetchError = fetch.FetchError
+const Headers = fetch.Headers
+const Request = fetch.Request
+const Response = fetch.Response
+const FetchErrorOrig = require('../src/fetch-error.js');
+const HeadersOrig = require('../src/headers.js');
+const RequestOrig = require('../src/request.js');
+const ResponseOrig = require('../src/response.js');
+const Body = require('../src/body.js');
+const Blob = require('../src/blob.js');
 
 const supportToString = ({
 	[Symbol.toStringTag]: 'z'
@@ -867,7 +867,7 @@ describe('node-fetch', () => {
 
 	it('should remove internal AbortSignal event listener after request is aborted', function () {
 		const controller = new AbortController();
-		const { signal } = controller;
+		const signal = controller.signal;
 		const promise = fetch(
 			`${base}timeout`,
 			{ signal }
@@ -912,7 +912,7 @@ describe('node-fetch', () => {
 
 	it('should remove internal AbortSignal event listener after request and response complete without aborting', () => {
 		const controller = new AbortController();
-		const { signal } = controller;
+		const signal = controller.signal;
 		const fetchHtml = fetch(`${base}html`, { signal })
 			.then(res => res.text());
 		const fetchResponseError = fetch(`${base}error/reset`, { signal });
@@ -1786,10 +1786,10 @@ describe('node-fetch', () => {
 				method: 'POST',
 				body: blob
 			});
-		}).then(res => res.json()).then(({body, headers}) => {
-			expect(body).to.equal('world');
-			expect(headers['content-type']).to.equal(type);
-			expect(headers['content-length']).to.equal(String(length));
+		}).then(res => res.json()).then((content) => {
+			expect(content.body).to.equal('world');
+			expect(content.headers['content-type']).to.equal(type);
+			expect(content.headers['content-length']).to.equal(String(length));
 		});
 	});
 
@@ -2311,7 +2311,7 @@ describe('Request', function () {
 
 		const form = new FormData();
 		form.append('a', '1');
-		const { signal } = new AbortController();
+		const signal = new AbortController().signal;
 
 		const r1 = new Request(url, {
 			method: 'POST',
@@ -2399,7 +2399,10 @@ describe('Request', function () {
 		});
 		expect(req.url).to.equal(url);
 		return req.arrayBuffer().then(function(result) {
-			expect(result).to.be.an.instanceOf(ArrayBuffer);
+			// nodev4 can't do this test as it doesn't have real arraybuffers
+			if (Buffer !== ArrayBuffer) {
+				expect(result).to.be.an.instanceOf(ArrayBuffer);
+			}
 			const str = String.fromCharCode.apply(null, new Uint8Array(result));
 			expect(str).to.equal('a=1');
 		});
@@ -2466,7 +2469,7 @@ describe('Request', function () {
 		let body = resumer().queue('a=1').end();
 		body = body.pipe(new stream.PassThrough());
 		const agent = new http.Agent();
-		const { signal } = new AbortController();
+		const signal = new AbortController().signal;
 		const req = new Request(url, {
 			body,
 			method: 'POST',
@@ -2531,9 +2534,9 @@ describe('Request', function () {
 
 function streamToPromise(stream, dataHandler) {
 	return new Promise((resolve, reject) => {
-		stream.on('data', (...args) => {
+		stream.on('data', function () {
 			Promise.resolve()
-				.then(() => dataHandler(...args))
+				.then(() => dataHandler.apply(null, arguments))
 				.catch(reject);
 		});
 		stream.on('end', resolve);

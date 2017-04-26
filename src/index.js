@@ -1,3 +1,4 @@
+'use strict'
 
 /**
  * index.js
@@ -7,18 +8,22 @@
  * All spec algorithm step numbers are based on https://fetch.spec.whatwg.org/commit-snapshots/ae716822cb3a61843226cd090eefc6589446c1d2/.
  */
 
-import Url from 'url';
-import http from 'http';
-import https from 'https';
-import zlib from 'zlib';
-import Stream from 'stream';
+const Url = require('url')
+const http = require('http');
+const https = require('https');
+const zlib = require('zlib');
+const Stream = require('stream');
 
-import Body, { writeToStream, getTotalBytes } from './body';
-import Response from './response';
-import Headers, { createHeadersLenient } from './headers';
-import Request, { getNodeRequestOptions } from './request';
-import FetchError from './fetch-error';
-import AbortError from './abort-error';
+const Body = require('./body.js')
+const writeToStream = Body.writeToStream
+const getTotalBytes = Body.getTotalBytes
+const Response = require('./response');
+const Headers = require('./headers');
+const createHeadersLenient = Headers.createHeadersLenient
+const Request = require('./request');
+const getNodeRequestOptions = Request.getNodeRequestOptions
+const FetchError = require('./fetch-error');
+const AbortError = require('./abort-error');
 
 // fix an issue where "PassThrough", "resolve" aren't a named export for node <10
 const PassThrough = Stream.PassThrough;
@@ -31,7 +36,8 @@ const resolve_url = Url.resolve;
  * @param   Object   opts  Fetch options
  * @return  Promise
  */
-export default function fetch(url, opts) {
+exports = module.exports = fetch
+function fetch(url, opts) {
 
 	// allow custom promise
 	if (!fetch.Promise) {
@@ -47,7 +53,7 @@ export default function fetch(url, opts) {
 		const options = getNodeRequestOptions(request);
 
 		const send = (options.protocol === 'https:' ? https : http).request;
-		const { signal } = request;
+		const signal = request.signal;
 		let response = null;
 
 		const abort = ()  => {
@@ -264,9 +270,7 @@ fetch.isRedirect = code => code === 301 || code === 302 || code === 303 || code 
 
 // expose Promise
 fetch.Promise = global.Promise;
-export {
-	Headers,
-	Request,
-	Response,
-	FetchError
-};
+exports.Headers = Headers;
+exports.Request = Request;
+exports.Response = Response;
+exports.FetchError = FetchError;

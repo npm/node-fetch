@@ -1,3 +1,4 @@
+'use strict'
 
 /**
  * request.js
@@ -7,10 +8,14 @@
  * All spec algorithm step numbers are based on https://fetch.spec.whatwg.org/commit-snapshots/ae716822cb3a61843226cd090eefc6589446c1d2/.
  */
 
-import Url from 'url';
-import Stream from 'stream';
-import Headers, { exportNodeCompatibleHeaders } from './headers.js';
-import Body, { clone, extractContentType, getTotalBytes } from './body';
+const Url = require('url')
+const Stream = require('stream')
+const Headers = require('./headers.js');
+const exportNodeCompatibleHeaders = Headers.exportNodeCompatibleHeaders
+const Body = require('./body.js')
+const clone = Body.clone
+const extractContentType = Body.extractContentType
+const getTotalBytes = Body.getTotalBytes
 
 const INTERNALS = Symbol('Request internals');
 
@@ -49,8 +54,9 @@ function isAbortSignal(signal) {
  * @param   Object  init   Custom options
  * @return  Void
  */
-export default class Request {
-	constructor(input, init = {}) {
+class Request {
+	constructor(input, init) {
+		if (!init) init = {}
 		let parsedURL;
 
 		// normalize input
@@ -173,13 +179,15 @@ Object.defineProperties(Request.prototype, {
 	signal: { enumerable: true },
 });
 
+exports = module.exports = Request
+
 /**
  * Convert a Request to Node.js http request options.
  *
  * @param   Request  A Request instance
  * @return  Object   The options object to be passed to http.request
  */
-export function getNodeRequestOptions(request) {
+exports.getNodeRequestOptions = function getNodeRequestOptions(request) {
 	const parsedURL = request[INTERNALS].parsedURL;
 	const headers = new Headers(request[INTERNALS].headers);
 

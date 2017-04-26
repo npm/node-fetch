@@ -1,3 +1,4 @@
+'use strict'
 
 /**
  * body.js
@@ -5,10 +6,11 @@
  * Body interface provides common methods for Request and Response
  */
 
-import Stream from 'stream';
+const Stream = require('stream')
 
-import Blob, { BUFFER } from './blob.js';
-import FetchError from './fetch-error.js';
+const Blob = require('./blob.js')
+const BUFFER = Blob.BUFFER
+const FetchError = require('./fetch-error.js')
 
 let convert;
 try { convert = require('encoding').convert; } catch(e) {}
@@ -27,10 +29,12 @@ const PassThrough = Stream.PassThrough;
  * @param   Object  opts  Response options
  * @return  Void
  */
-export default function Body(body, {
-	size = 0,
-	timeout = 0
-} = {}) {
+exports = module.exports = Body
+
+function Body(body, opts) {
+	if (!opts) opts = {}
+	const size = opts.size == null ? 0 : opts.size
+	const timeout = opts.timeout == null ? 0 : opts.timeout
 	if (body == null) {
 		// body is undefined or null
 		body = null;
@@ -361,7 +365,7 @@ function isURLSearchParams(obj) {
  * @param   Mixed  instance  Response or Request instance
  * @return  Mixed
  */
-export function clone(instance) {
+exports.clone = function clone(instance) {
 	let p1, p2;
 	let body = instance.body;
 
@@ -395,7 +399,7 @@ export function clone(instance) {
  *
  * @param   Mixed  instance  Response or Request instance
  */
-export function extractContentType(body) {
+exports.extractContentType = function extractContentType(body) {
 	// istanbul ignore if: Currently, because of a guard in Request, body
 	// can never be null. Included here for completeness.
 	if (body === null) {
@@ -441,8 +445,8 @@ export function extractContentType(body) {
  * @param   Body    instance   Instance of Body
  * @return  Number?            Number of bytes, or null if not possible
  */
-export function getTotalBytes(instance) {
-	const {body} = instance;
+exports.getTotalBytes = function getTotalBytes(instance) {
+	const body = instance.body;
 
 	// istanbul ignore if: included for completion
 	if (body === null) {
@@ -471,8 +475,8 @@ export function getTotalBytes(instance) {
  * @param   Body    instance   Instance of Body
  * @return  Void
  */
-export function writeToStream(dest, instance) {
-	const {body} = instance;
+exports.writeToStream = function writeToStream(dest, instance) {
+	const body = instance.body;
 
 	if (body === null) {
 		// body is null
