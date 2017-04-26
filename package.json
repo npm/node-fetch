@@ -1,29 +1,28 @@
 {
-  "name": "node-fetch",
+  "name": "node-fetch-npm",
   "version": "2.3.0",
-  "description": "A light-weight module that brings window.fetch to node.js",
+  "description": "An npm cli-oriented fork of the excellent node-fetch",
   "main": "src/index.js",
   "files": [
-    "src/blob.js",
-    "src/body.js",
-    "src/common.js",
-    "src/fetch-error.js",
-    "src/headers.js",
-    "src/index.js",
-    "src/request.js",
-    "src/response.js"
+    "src/*.js"
   ],
   "engines": {
     "node": "4.x || >=6.0.0"
   },
   "scripts": {
+    "prerelease": "npm t",
+    "postrelease": "npm publish && git push --follow-tags",
+    "pretest": "standard src/*",
+    "release": "standard-version -s",
     "test": "mocha test/test.js",
     "report": "nyc --reporter lcov --reporter text mocha -R spec test/test.js",
-    "coverage": "nyc --reporter json --reporter text mocha -R spec test/test.js && codecov -f coverage/coverage-final.json"
+    "coverage": "nyc --reporter json --reporter text mocha -R spec test/test.js && codecov -f coverage/coverage-final.json",
+    "update-coc": "weallbehave -o . && git add CODE_OF_CONDUCT.md && git commit -m 'docs(coc): updated CODE_OF_CONDUCT.md'",
+    "update-contrib": "weallcontribute -o . && git add CONTRIBUTING.md && git commit -m 'docs(contributing): updated CONTRIBUTING.md'"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/bitinn/node-fetch.git"
+    "url": "https://github.com/npm/node-fetch-npm.git"
   },
   "keywords": [
     "fetch",
@@ -33,9 +32,21 @@
   "author": "David Frank",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/bitinn/node-fetch/issues"
+    "url": "https://github.com/npm/node-fetch-npm/issues"
   },
-  "homepage": "https://github.com/bitinn/node-fetch",
+  "contributors": [
+    {
+      "name": "Rebecca Turner",
+      "email": "me@re-becca.org",
+      "twitter": "ReBeccaOrg"
+    },
+    {
+      "name": "Kat Marchán",
+      "email": "kzm@sykosomatic.org",
+      "twitter": "maybekatz"
+    }
+  ],
+  "homepage": "https://github.com/npm/node-fetch-npm",
   "devDependencies": {
     "abort-controller": "^1.0.2",
     "abortcontroller-polyfill": "^1.1.9",
@@ -52,9 +63,15 @@
     "parted": "^0.1.1",
     "promise": "^8.0.1",
     "resumer": "0.0.0",
+    "standard": "^10.0.2",
+    "standard-version": "^4.0.0",
     "string-to-arraybuffer": "^1.0.0",
     "url-search-params": "^1.0.2",
+    "weallbehave": "^1.0.3",
+    "weallcontribute": "^1.0.8",
     "whatwg-url": "^5.0.0"
   },
-  "dependencies": {}
+  "dependencies": {
+    "safe-buffer": "^5.0.1"
+  }
 }
