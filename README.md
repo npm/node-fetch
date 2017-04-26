@@ -11,7 +11,14 @@ A light-weight module that brings `window.fetch` to Node.js
 `node-fetch-npm` is a fork of [`node-fetch`](https://npm.im/node-fetch) used in
 npm itself, through [`make-fetch-happen`](https://npm.im/make-fetch-happen). It
 has more regular releases and accepts some patches that would not fit with
-`node-fetch`'s own design goals (such as picking a specific cookie library).
+`node-fetch`'s own design goals (such as picking a specific cookie library,
+removing `babel` dependency altogether, etc).
+
+This library is *not a replacement* for `node-fetch`, nor does it intend to
+supplant it. It's purely a fork maintained for the sake of easier patching of
+specific needs that it wouldn't be fair to shove down the main project's throat.
+This project will still send patches for shared bugs over and hopefully help
+improve its "parent".
 
 <!-- TOC -->
 
