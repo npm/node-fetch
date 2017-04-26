@@ -1,11 +1,12 @@
-import * as http from 'http';
-import { parse } from 'url';
-import * as zlib from 'zlib';
-import * as stream from 'stream';
-import { convert } from 'encoding';
-import { multipart as Multipart } from 'parted';
+'use strict'
+const http = require('http');
+const parse = require('url').parse;
+const zlib = require('zlib');
+const stream = require('stream');
+const convert = require('encoding').convert;
+const Multipart = require('parted').multipart;
 
-export default class TestServer {
+module.exports = class TestServer {
 	constructor() {
 		this.server = http.createServer(this.router);
 		this.port = 30001;

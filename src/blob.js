@@ -1,11 +1,12 @@
+'use strict'
 // Based on https://github.com/tmpvar/jsdom/blob/aa85b2abf07766ff7bf5c1f6daafb3726f2f2db5/lib/jsdom/living/blob.js
 // (MIT licensed)
 
-export const BUFFER = Symbol('buffer');
+const BUFFER = Symbol('buffer');
 const TYPE = Symbol('type');
 const CLOSED = Symbol('closed');
 
-export default class Blob {
+class Blob {
 	constructor() {
 		Object.defineProperty(this, Symbol.toStringTag, {
 			value: 'Blob',
@@ -95,6 +96,8 @@ export default class Blob {
 		this[CLOSED] = true;
 	}
 }
+exports = module.exports = Blob
+exports.BUFFER = BUFFER
 
 Object.defineProperty(Blob.prototype, Symbol.toStringTag, {
 	value: 'BlobPrototype',

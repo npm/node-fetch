@@ -1,3 +1,4 @@
+'use strict'
 
 /**
  * headers.js
@@ -5,7 +6,9 @@
  * Headers class offers convenient helpers
  */
 
-import { checkInvalidHeaderChar, checkIsHttpToken } from './common.js';
+const common = require('./common.js')
+const checkInvalidHeaderChar = common.checkInvalidHeaderChar
+const checkIsHttpToken = common.checkIsHttpToken
 
 function sanitizeName(name) {
 	name += '';
@@ -24,14 +27,14 @@ function sanitizeValue(value) {
 }
 
 const MAP = Symbol('map');
-export default class Headers {
+class Headers {
 	/**
 	 * Headers class
 	 *
 	 * @param   Object  headers  Response headers
 	 * @return  Void
 	 */
-	constructor(init = undefined) {
+	constructor(init) {
 		this[MAP] = Object.create(null);
 
 		if (init instanceof Headers) {
@@ -115,11 +118,12 @@ export default class Headers {
 	 * @param   Boolean   thisArg   `this` context for callback function
 	 * @return  Void
 	 */
-	forEach(callback, thisArg = undefined) {
+	forEach(callback, thisArg) {
 		let pairs = getHeaderPairs(this);
 		let i = 0;
 		while (i < pairs.length) {
-			const [name, value] = pairs[i];
+			const name = pairs[i][0]
+			const value = pairs[i][1]
 			callback.call(thisArg, value, name, this);
 			pairs = getHeaderPairs(this);
 			i++;
@@ -249,11 +253,9 @@ const HeadersIteratorPrototype = Object.setPrototypeOf({
 			throw new TypeError('Value of `this` is not a HeadersIterator');
 		}
 
-		const {
-			target,
-			kind,
-			index
-		} = this[INTERNAL];
+		const target = this[INTERNAL].target
+		const kind = this[INTERNAL].kind
+		const index = this[INTERNAL].index
 		const values = getHeaderPairs(target, kind);
 		const len = values.length;
 		if (index >= len) {
@@ -290,3 +292,5 @@ Object.defineProperty(HeadersIteratorPrototype, Symbol.toStringTag, {
 	enumerable: false,
 	configurable: true
 });
+
+module.exports = Headers

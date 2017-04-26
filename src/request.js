@@ -1,3 +1,4 @@
+'use strict'
 
 /**
  * request.js
@@ -5,9 +6,13 @@
  * Request class contains server only options
  */
 
-import { format as format_url, parse as parse_url } from 'url';
-import Headers from './headers.js';
-import Body, { clone, extractContentType, getTotalBytes } from './body';
+const format_url = require('url').format
+const parse_url = require('url').parse
+const Headers = require('./headers.js');
+const Body = require('./body.js')
+const clone = Body.clone
+const extractContentType = Body.extractContentType
+const getTotalBytes = Body.getTotalBytes
 
 const PARSED_URL = Symbol('url');
 
@@ -18,8 +23,9 @@ const PARSED_URL = Symbol('url');
  * @param   Object  init   Custom options
  * @return  Void
  */
-export default class Request {
-	constructor(input, init = {}) {
+class Request {
+	constructor(input, init) {
+		if (!init) init = {}
 		let parsedURL;
 
 		// normalize input
@@ -110,7 +116,9 @@ Object.defineProperty(Request.prototype, Symbol.toStringTag, {
 	configurable: true
 });
 
-export function getNodeRequestOptions(request) {
+exports = module.exports = Request
+
+exports.getNodeRequestOptions = function getNodeRequestOptions(request) {
 	const parsedURL = request[PARSED_URL];
 	const headers = new Headers(request.headers);
 

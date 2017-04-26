@@ -1,39 +1,39 @@
+'use strict'
 
 // test tools
-import chai from 'chai';
-import chaiPromised from 'chai-as-promised';
-import chaiIterator from 'chai-iterator';
-import chaiString from 'chai-string';
-import then from 'promise';
-import {spawn} from 'child_process';
-import * as stream from 'stream';
-import resumer from 'resumer';
-import FormData from 'form-data';
-import {parse as parseURL} from 'url';
-import {URL} from 'whatwg-url';
-import * as http from 'http';
-import * as fs from 'fs';
+const chai = require('chai');
+const chaiPromised = require('chai-as-promised');
+const chaiIterator = require('chai-iterator');
+const chaiString = require('chai-string');
+const then = require('promise');
+const spawn = require('child_process').spawn;
+const stream = require('stream');
+const resumer = require('resumer');
+const FormData = require('form-data');
+const parseURL = require('url').parse
+const URL = require('whatwg-url').URL;
+const http = require('http');
+const fs = require('fs');
 
 chai.use(chaiPromised);
 chai.use(chaiIterator);
 chai.use(chaiString);
 const expect = chai.expect;
 
-import TestServer from './server';
+const TestServer = require('./server');
 
 // test subjects
-import fetch, {
-	FetchError,
-	Headers,
-	Request,
-	Response
-} from '../src/';
-import FetchErrorOrig from '../src/fetch-error.js';
-import HeadersOrig from '../src/headers.js';
-import RequestOrig from '../src/request.js';
-import ResponseOrig from '../src/response.js';
-import Body from '../src/body.js';
-import Blob from '../src/blob.js';
+const fetch = require('../src/')
+const FetchError = fetch.FetchError
+const Headers = fetch.Headers
+const Request = fetch.Request
+const Response = fetch.Response
+const FetchErrorOrig = require('../src/fetch-error.js');
+const HeadersOrig = require('../src/headers.js');
+const RequestOrig = require('../src/request.js');
+const ResponseOrig = require('../src/response.js');
+const Body = require('../src/body.js');
+const Blob = require('../src/blob.js');
 
 const supportToString = ({
 	[Symbol.toStringTag]: 'z'
@@ -1486,10 +1486,10 @@ describe('node-fetch', () => {
 				method: 'POST',
 				body: blob
 			});
-		}).then(res => res.json()).then(({body, headers}) => {
-			expect(body).to.equal('world');
-			expect(headers['content-type']).to.equal(type);
-			expect(headers['content-length']).to.equal(String(length));
+		}).then(res => res.json()).then(result => {
+			expect(result.body).to.equal('world');
+			expect(result.headers['content-type']).to.equal(type);
+			expect(result.headers['content-length']).to.equal(String(length));
 		});
 	});
 
@@ -1843,9 +1843,9 @@ describe('node-fetch', () => {
 
 function streamToPromise(stream, dataHandler) {
 	return new Promise((resolve, reject) => {
-		stream.on('data', (...args) => {
+		stream.on('data', function () {
 			Promise.resolve()
-				.then(() => dataHandler(...args))
+				.then(() => dataHandler.apply(null, arguments))
 				.catch(reject);
 		});
 		stream.on('end', resolve);

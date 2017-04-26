@@ -1,3 +1,4 @@
+'use strict'
 
 /**
  * index.js
@@ -5,17 +6,19 @@
  * a request API compatible with window.fetch
  */
 
-import {resolve as resolve_url} from 'url';
-import * as http from 'http';
-import * as https from 'https';
-import * as zlib from 'zlib';
-import {PassThrough} from 'stream';
+const resolve_url = require('url').resolve;
+const http = require('http');
+const https = require('https');
+const zlib = require('zlib');
+const PassThrough = require('stream').PassThrough;
 
-import Body, { writeToStream } from './body';
-import Response from './response';
-import Headers from './headers';
-import Request, { getNodeRequestOptions } from './request';
-import FetchError from './fetch-error';
+const Body = require('./body.js')
+const writeToStream = Body.writeToStream
+const Response = require('./response');
+const Headers = require('./headers');
+const Request = require('./request');
+const getNodeRequestOptions = Request.getNodeRequestOptions
+const FetchError = require('./fetch-error');
 
 /**
  * Fetch function
@@ -24,7 +27,8 @@ import FetchError from './fetch-error';
  * @param   Object   opts  Fetch options
  * @return  Promise
  */
-export default function fetch(url, opts) {
+exports = module.exports = fetch
+function fetch(url, opts) {
 
 	// allow custom promise
 	if (!fetch.Promise) {
@@ -193,9 +197,7 @@ fetch.isRedirect = code => code === 301 || code === 302 || code === 303 || code 
 
 // expose Promise
 fetch.Promise = global.Promise;
-export {
-	Headers,
-	Request,
-	Response,
-	FetchError
-};
+exports.Headers = Headers;
+exports.Request = Request;
+exports.Response = Response;
+exports.FetchError = FetchError;

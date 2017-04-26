@@ -2,21 +2,24 @@
   "name": "node-fetch",
   "version": "2.0.0-alpha.3",
   "description": "A light-weight module that brings window.fetch to node.js",
-  "main": "lib/index.js",
-  "module": "lib/index.es.js",
+  "main": "src/index.js",
   "files": [
-    "lib/index.js",
-    "lib/index.es.js"
+    "src/blob.js",
+    "src/body.js",
+    "src/common.js",
+    "src/fetch-error.js",
+    "src/headers.js",
+    "src/index.js",
+    "src/request.js",
+    "src/response.js"
   ],
   "engines": {
     "node": ">=4"
   },
   "scripts": {
-    "build": "cross-env BABEL_ENV=rollup rollup -c",
-    "prepublish": "npm run build",
-    "test": "cross-env BABEL_ENV=test mocha --compilers js:babel-register test/test.js",
-    "report": "cross-env BABEL_ENV=coverage nyc --reporter lcov --reporter text mocha -R spec test/test.js",
-    "coverage": "cross-env BABEL_ENV=coverage nyc --reporter json --reporter text mocha -R spec test/test.js && codecov -f coverage/coverage-final.json"
+    "test": "mocha test/test.js",
+    "report": "nyc --reporter lcov --reporter text mocha -R spec test/test.js",
+    "coverage": "nyc --reporter json --reporter text mocha -R spec test/test.js && codecov -f coverage/coverage-final.json"
   },
   "repository": {
     "type": "git",
@@ -34,9 +37,6 @@
   },
   "homepage": "https://github.com/bitinn/node-fetch",
   "devDependencies": {
-    "babel-plugin-istanbul": "^4.0.0",
-    "babel-preset-env": "^1.1.10",
-    "babel-register": "^6.16.3",
     "chai": "^3.5.0",
     "chai-as-promised": "^6.0.0",
     "chai-iterator": "^1.1.1",
@@ -50,8 +50,6 @@
     "parted": "^0.1.1",
     "promise": "^7.1.1",
     "resumer": "0.0.0",
-    "rollup": "^0.41.4",
-    "rollup-plugin-babel": "^2.6.1",
     "whatwg-url": "^4.0.0"
   },
   "dependencies": {

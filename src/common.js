@@ -1,3 +1,4 @@
+'use strict'
 /**
  * A set of utilities borrowed from Node.js' _http_common.js
  */
@@ -71,7 +72,7 @@ function checkIsHttpToken(val) {
   }
   return true;
 }
-export { checkIsHttpToken };
+exports.checkIsHttpToken = checkIsHttpToken;
 
 /**
  * True if val contains an invalid field-vchar
@@ -108,4 +109,4 @@ function checkInvalidHeaderChar(val) {
   }
   return false;
 }
-export { checkInvalidHeaderChar };
+exports.checkInvalidHeaderChar = checkInvalidHeaderChar

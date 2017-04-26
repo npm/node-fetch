@@ -1,3 +1,4 @@
+'use strict'
 
 /**
  * response.js
@@ -5,9 +6,10 @@
  * Response class provides content decoding
  */
 
-import { STATUS_CODES } from 'http';
-import Headers from './headers.js';
-import Body, { clone } from './body';
+const  STATUS_CODES  = require('http'). STATUS_CODES ;
+const Headers = require('./headers.js');
+const Body = require('./body.js');
+const clone = Body.clone
 
 /**
  * Response class
@@ -16,8 +18,9 @@ import Body, { clone } from './body';
  * @param   Object  opts  Response options
  * @return  Void
  */
-export default class Response {
-	constructor(body = null, opts = {}) {
+class Response {
+	constructor(body, opts) {
+		if (!opts) opts = {}
 		Body.call(this, body, opts);
 
 		this.url = opts.url;
@@ -67,3 +70,4 @@ Object.defineProperty(Response.prototype, Symbol.toStringTag, {
 	enumerable: false,
 	configurable: true
 });
+module.exports = Response
