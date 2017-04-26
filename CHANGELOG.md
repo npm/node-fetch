@@ -1,3 +1,22 @@
+# Change Log
+
+All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
+
+<a name="1.0.0"></a>
+# [1.0.0](https://github.com/npm/node-fetch-npm/compare/v2.0.0-alpha.3...v1.0.0) (2017-04-26)
+
+
+### Bug Fixes
+
+* **proj:** initial fork changes ([0a190a8](https://github.com/npm/node-fetch-npm/commit/0a190a8))
+
+
+### BREAKING CHANGES
+
+* **proj:** this renames the library altogether
+
+
+
 
 Changelog
 =========
