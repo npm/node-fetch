@@ -1,6 +1,6 @@
 
-node-fetch
-==========
+node-fetch-npm
+==============
 
 [![npm version][npm-image]][npm-url]
 [![build status][travis-image]][travis-url]
@@ -8,6 +8,10 @@ node-fetch
 
 A light-weight module that brings `window.fetch` to Node.js
 
+`node-fetch-npm` is a fork of [`node-fetch`](https://npm.im/node-fetch) used in
+npm itself, through [`make-fetch-happen`](https://npm.im/make-fetch-happen). It
+has more regular releases and accepts some patches that would not fit with
+`node-fetch`'s own design goals (such as picking a specific cookie library).
 
 ## Motivation
 
@@ -28,7 +32,7 @@ See Matt Andrews' [isomorphic-fetch](https://github.com/matthew-andrews/isomorph
 
 ## Difference from client-side fetch
 
-- See [Known Differences](https://github.com/bitinn/node-fetch/blob/master/LIMITS.md) for details.
+- See [Known Differences](https://github.com/npm/node-fetch-npm/blob/master/LIMITS.md) for details.
 - If you happen to use a missing feature that `window.fetch` offers, feel free to open an issue.
 - Pull requests are welcomed too!
 
@@ -36,7 +40,7 @@ See Matt Andrews' [isomorphic-fetch](https://github.com/matthew-andrews/isomorph
 ## Install
 
 ```sh
-$ npm install node-fetch --save
+$ npm install node-fetch-npm --save
 ```
 
 
@@ -120,7 +124,7 @@ fetch('http://httpbin.org/post', { method: 'POST', body: stream })
 // post with JSON
 
 var body = { a: 1 };
-fetch('http://httpbin.org/post', { 
+fetch('http://httpbin.org/post', {
 	method: 'POST',
 	body:    JSON.stringify(body),
 	headers: { 'Content-Type': 'application/json' },
@@ -158,7 +162,7 @@ fetch('http://httpbin.org/post', { method: 'POST', body: form, headers: form.get
 })();
 ```
 
-See [test cases](https://github.com/bitinn/node-fetch/blob/master/test/test.js) for more examples.
+See [test cases](https://github.com/npm/node-fetch-npm/blob/master/test/test.js) for more examples.
 
 
 ## API
@@ -186,7 +190,7 @@ The default values are shown after each option key.
 	body: null,         // request body. can be null, a string, a Buffer, a Blob, or a Node.js Readable stream
 	redirect: 'follow', // set to `manual` to extract redirect headers, `error` to reject redirect
 
-	// The following properties are node-fetch extensions
+	// The following properties are node-fetch-npm extensions
 	follow: 20,         // maximum redirect count. 0 to not follow redirect
 	timeout: 0,         // req/res timeout in ms, it resets on redirect. 0 to disable (OS limit applies)
 	compress: true,     // support gzip/deflate content encoding. false to disable
@@ -205,7 +209,7 @@ Header            | Value
 `Accept`          | `*/*`
 `Connection`      | `close` _(when no `options.agent` is present)_
 `Content-Length`  | _(automatically calculated, if possible)_
-`User-Agent`      | `node-fetch/1.0 (+https://github.com/bitinn/node-fetch)`
+`User-Agent`      | `node-fetch-npm/1.0 (+https://github.com/npm/node-fetch-npm)`
 
 <a id="class-request"></a>
 ### Class: Request
@@ -224,7 +228,7 @@ Due to the nature of Node.js, the following properties are not implemented at th
 - `integrity`
 - `keepalive`
 
-The following node-fetch extension properties are provided:
+The following node-fetch-npm extension properties are provided:
 
 - `follow`
 - `compress`
@@ -249,7 +253,7 @@ In most cases, directly `fetch(url, options)` is simpler than creating a `Reques
 
 An HTTP(S) response. This class implements the [Body](#iface-body) interface.
 
-The following properties are not implemented in node-fetch at this moment:
+The following properties are not implemented in node-fetch-npm at this moment:
 
 - `Response.error()`
 - `Response.redirect()`
@@ -310,7 +314,7 @@ const copyOfHeaders = new Headers(headers);
 
 `Body` is an abstract interface with methods that are applicable to both `Request` and `Response` classes.
 
-The following methods are not yet implemented in node-fetch at this moment:
+The following methods are not yet implemented in node-fetch-npm at this moment:
 
 - `formData()`
 
@@ -320,7 +324,7 @@ The following methods are not yet implemented in node-fetch at this moment:
 
 * Node.js [`Readable` stream][node-readable]
 
-The data encapsulated in the `Body` object. Note that while the [Fetch Standard][whatwg-fetch] requires the property to always be a WHATWG `ReadableStream`, in node-fetch it is a Node.js [`Readable` stream][node-readable].
+The data encapsulated in the `Body` object. Note that while the [Fetch Standard][whatwg-fetch] requires the property to always be a WHATWG `ReadableStream`, in node-fetch-npm it is a Node.js [`Readable` stream][node-readable].
 
 #### body.bodyUsed
 
@@ -343,7 +347,7 @@ Consume the body and return a promise that will resolve to one of these formats.
 
 #### body.buffer()
 
-<small>*(node-fetch extension)*</small>
+<small>*(node-fetch-npm extension)*</small>
 
 * Returns: <code>Promise&lt;Buffer&gt;</code>
 
@@ -351,7 +355,7 @@ Consume the body and return a promise that will resolve to a Buffer.
 
 #### body.textConverted()
 
-<small>*(node-fetch extension)*</small>
+<small>*(node-fetch-npm extension)*</small>
 
 * Returns: <code>Promise&lt;String&gt;</code>
 
@@ -360,7 +364,7 @@ Identical to `body.text()`, except instead of always converting to UTF-8, encodi
 <a id="class-fetcherror"></a>
 ### Class: FetchError
 
-<small>*(node-fetch extension)*</small>
+<small>*(node-fetch-npm extension)*</small>
 
 An operational error in the fetching process. See [ERROR-HANDLING.md][] for more info.
 
@@ -374,13 +378,13 @@ MIT
 Thanks to [github/fetch](https://github.com/github/fetch) for providing a solid implementation reference.
 
 
-[npm-image]: https://img.shields.io/npm/v/node-fetch.svg?style=flat-square
-[npm-url]: https://www.npmjs.com/package/node-fetch
-[travis-image]: https://img.shields.io/travis/bitinn/node-fetch.svg?style=flat-square
-[travis-url]: https://travis-ci.org/bitinn/node-fetch
-[codecov-image]: https://img.shields.io/codecov/c/github/bitinn/node-fetch.svg?style=flat-square
-[codecov-url]: https://codecov.io/gh/bitinn/node-fetch
-[ERROR-HANDLING.md]: https://github.com/bitinn/node-fetch/blob/master/ERROR-HANDLING.md
+[npm-image]: https://img.shields.io/npm/v/node-fetch-npm.svg?style=flat-square
+[npm-url]: https://www.npmjs.com/package/node-fetch-npm
+[travis-image]: https://img.shields.io/travis/npm/node-fetch-npm.svg?style=flat-square
+[travis-url]: https://travis-ci.org/npm/node-fetch-npm
+[codecov-image]: https://img.shields.io/codecov/c/github/npm/node-fetch-npm.svg?style=flat-square
+[codecov-url]: https://codecov.io/gh/npm/node-fetch-npm
+[ERROR-HANDLING.md]: https://github.com/npm/node-fetch-npm/blob/master/ERROR-HANDLING.md
 [whatwg-fetch]: https://fetch.spec.whatwg.org/
 [response-init]: https://fetch.spec.whatwg.org/#responseinit
 [node-readable]: https://nodejs.org/api/stream.html#stream_readable_streams
