@@ -90,9 +90,10 @@ function fetch (uri, opts) {
         // Remove authorization if changing hostnames (but not if just
         // changing ports or protocols).  This matches the behavior of request:
         // https://github.com/request/request/blob/b12a6245/lib/redirect.js#L134-L138
+        const resolvedUrl = url.resolve(request.url, res.headers.location)
         let redirectURL = ''
         if (!isURL.test(res.headers.location)) {
-          redirectURL = url.parse(url.resolve(request.url, res.headers.location))
+          redirectURL = url.parse(resolvedUrl)
         } else {
           redirectURL = url.parse(res.headers.location)
         }
@@ -110,7 +111,7 @@ function fetch (uri, opts) {
 
         request.counter++
 
-        resolve(fetch(url.resolve(request.url, res.headers.location), request))
+        resolve(fetch(resolvedUrl, request))
         return
       }
 
