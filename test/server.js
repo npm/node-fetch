@@ -260,7 +260,7 @@ module.exports = class TestServer {
 
 		if (p === '/redirect/host/same') {
 			res.statusCode = 301;
-			res.setHeader('Location', 'localhost:30001/inspect');
+			res.setHeader('Location', 'http://localhost:30001/inspect');
 			res.end();
 		}
 
