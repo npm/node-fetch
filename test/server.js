@@ -34,7 +34,7 @@ exports = module.exports = class TestServer {
 
 	router(req, res) {
 		let p = parse(req.url).pathname;
-
+		let h = parse(req.url).host;
 		if (p === '/hello') {
 			res.statusCode = 200;
 			res.setHeader('Content-Type', 'text/plain');
@@ -283,6 +283,31 @@ exports = module.exports = class TestServer {
 			res.setHeader('Location', '/slow');
 			res.end();
 		}
+
+		if (p === '/redirect/host/different') {
+			res.statusCode = 301;
+			res.setHeader('Location', 'http://127.0.0.1:30001/inspect');
+			res.end();
+		}
+
+		if (p === '/redirect/host/same') {
+			res.statusCode = 301;
+			res.setHeader('Location', `http://localhost:30001/inspect`);
+			res.end();
+		}
+
+		if (p === '/redirect/host/relativeuri') {
+			res.statusCode = 301;
+			res.setHeader('Location', '/inspect')
+			res.end()
+		}
+
+		if (p === '/redirect/host/protocolrelative') {
+			res.statusCode = 301;
+			res.setHeader('Location', `//localhost:30001/inspect`)
+			res.end()
+		}
+
 
 		if (p === '/error/400') {
 			res.statusCode = 400;

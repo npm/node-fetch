@@ -28,6 +28,7 @@ const AbortError = require('./abort-error')
 // fix an issue where "PassThrough", "resolve" aren't a named export for node <10
 const PassThrough = Stream.PassThrough
 const resolveUrl = Url.resolve
+const parseUrl = Url.parse
 
 /**
  * Fetch function
@@ -114,7 +115,14 @@ function fetch (url, opts) {
         const location = headers.get('Location')
 
         // HTTP fetch step 5.3
-        const locationURL = location === null ? null : resolveUrl(request.url, location)
+        const locationURL = location == null ? null : resolveUrl(request.url, location)
+
+        // Remove authorization if changing hostnames (but not if just
+        // changing ports or protocols).  This matches the behavior of request:
+        // https://github.com/request/request/blob/b12a6245/lib/redirect.js#L134-L138
+        if (locationURL && parseUrl(request.url).hostname !== parseUrl(locationURL).hostname) {
+          request.headers.delete('authorization')
+        }
 
         // HTTP fetch step 5.5
         switch (request.redirect) {

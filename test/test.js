@@ -59,6 +59,7 @@ const supportStreamDestroy = 'destroy' in stream.Readable.prototype;
 
 const local = new TestServer();
 const base = `http://${local.hostname}:${local.port}/`;
+const redirectBase = `http://127.0.0.1:${local.port}/`;
 
 before(done => {
 	local.start(done);
@@ -282,11 +283,67 @@ describe('node-fetch', () => {
 		});
 	});
 
-	it('should follow POST request redirect code 301 with GET', function() {
+	it('should remove authorization header on redirect if hostname changed', function () {
+		const url = `${base}redirect/host/different`
+		const opts = {
+			headers: new Headers({ 'authorization': 'abc' })
+		};
+		return fetch(url, opts).then(res => {
+			expect(res.url).to.equal(`${redirectBase}inspect`);
+			return res.json()
+			.then(res => {
+				expect(res.headers['authorization']).to.be.undefined;
+			});
+		});
+	});
+
+	it('should preserve authorization header on redirect if hostname did not change', function () {
+		const url = `${base}redirect/host/same`
+		const opts = {
+			headers: new Headers({ 'authorization': 'abc' })
+		};
+		return fetch(url, opts).then(res => {
+			expect(res.url).to.equal(`${base}inspect`);
+			return res.json()
+			.then(res => {
+				expect(res.headers['authorization']).to.equal('abc');
+			});
+		});
+	});
+	
+	it('should preserve authorization header on redirect if url is relative', function () {
+		const url = `${base}redirect/host/relativeuri`
+		const opts = {
+			headers: new Headers({ 'authorization': 'abc' })
+		};
+		return fetch(url, opts).then(res => {
+			expect(res.url).to.equal(`${base}inspect`);
+			return res.json()
+			.then(res => {
+				expect(res.headers['authorization']).to.equal('abc');
+			});
+		});
+	});
+	
+	it('should preserve authorization header on redirect if url is protocol relative', function () {
+		const url = `${base}redirect/host/protocolrelative`
+		const opts = {
+			headers: new Headers({ 'authorization': 'abc' })
+		};
+		return fetch(url, opts).then(res => {
+			expect(res.url).to.equal(`${base}inspect`);
+			return res.json()
+			.then(res => {
+				expect(res.headers['authorization']).to.equal('abc');
+			});
+		});
+	});
+
+	it('should follow POST request redirect code 301 with GET', function () {
 		const url = `${base}redirect/301`;
 		const opts = {
-			method: 'POST',
-			body: 'a=1'
+			method: 'POST'
+			, body: 'a=1'
 		};
 		return fetch(url, opts).then(res => {
 			expect(res.url).to.equal(`${base}inspect`);
