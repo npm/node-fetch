@@ -19,6 +19,7 @@ const Headers = require('./headers')
 const Request = require('./request')
 const getNodeRequestOptions = Request.getNodeRequestOptions
 const FetchError = require('./fetch-error')
+const isURL = /^https?:/
 
 /**
  * Fetch function
@@ -85,6 +86,18 @@ function fetch (uri, opts) {
         if (!res.headers.location) {
           reject(new FetchError(`redirect location header missing at: ${request.url}`, 'invalid-redirect'))
           return
+        }
+        // Remove authorization if changing hostnames (but not if just
+        // changing ports or protocols).  This matches the behavior of request:
+        // https://github.com/request/request/blob/b12a6245/lib/redirect.js#L134-L138
+        let redirectURL = ''
+        if (!isURL.test(res.headers.location)) {
+          redirectURL = url.parse(url.resolve(request.url, res.headers.location))
+        } else {
+          redirectURL = url.parse(res.headers.location)
+        }
+        if (url.parse(request.url).hostname !== redirectURL.hostname) {
+          request.headers.delete('authorization')
         }
 
         // per fetch spec, for POST request with 301/302 response, or any request with 303 response, use GET when following redirect

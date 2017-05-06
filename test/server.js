@@ -252,6 +252,31 @@ module.exports = class TestServer {
 			res.end();
 		}
 
+		if (p === '/redirect/host/different') {
+			res.statusCode = 301;
+			res.setHeader('Location', 'http://127.0.0.1:30001/inspect');
+			res.end();
+		}
+
+		if (p === '/redirect/host/same') {
+			res.statusCode = 301;
+			res.setHeader('Location', 'localhost:30001/inspect');
+			res.end();
+		}
+
+		if (p === '/redirect/host/relativeuri') {
+			res.statusCode = 301;
+			res.setHeader('Location', '/inspect')
+			res.end()
+		}
+
+		if (p === '/redirect/host/protocolrelative') {
+			res.statusCode = 301;
+			res.setHeader('Location', '//localhost:30001/inspect')
+			res.end()
+		}
+
+
 		if (p === '/error/400') {
 			res.statusCode = 400;
 			res.setHeader('Content-Type', 'text/plain');

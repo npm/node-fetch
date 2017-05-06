@@ -41,6 +41,7 @@ const supportToString = ({
 
 const local = new TestServer();
 const base = `http://${local.hostname}:${local.port}/`;
+const redirectBase = `http://127.0.0.1:${local.port}/`;
 let url, opts;
 
 before(done => {
@@ -251,7 +252,63 @@ describe('node-fetch', () => {
 		});
 	});
 
-	it('should follow POST request redirect code 301 with GET', function() {
+	it('should remove authorization header on redirect if hostname changed', function () {
+		url = `${base}redirect/host/different`
+		opts = {
+			headers: new Headers({ 'authorization': 'abc' })
+		};
+		return fetch(url, opts).then(res => {
+			expect(res.url).to.equal(`${redirectBase}inspect`);
+			return res.json()
+			.then(res => {
+				expect(res.headers['authorization']).to.be.undefined;
+			});
+		});
+	});
+
+	it('should preserve authorization header on redirect if hostname did not change', function () {
+		url = `${base}redirect/host/same`
+		opts = {
+			headers: new Headers({ 'authorization': 'abc' })
+		};
+		return fetch(url, opts).then(res => {
+			expect(res.url).to.equal(`${base}inspect`);
+			return res.json()
+			.then(res => {
+				expect(res.headers['authorization']).to.equal('abc');
+			});
+		});
+	});
+	
+	it('should preserve authorization header on redirect if url is relative', function () {
+		url = `${base}redirect/host/relativeuri`
+		opts = {
+			headers: new Headers({ 'authorization': 'abc' })
+		};
+		return fetch(url, opts).then(res => {
+			expect(res.url).to.equal(`${base}inspect`);
+			return res.json()
+			.then(res => {
+				expect(res.headers['authorization']).to.equal('abc');
+			});
+		});
+	});
+	
+	it('should preserve authorization header on redirect if url is protocol relative', function () {
+		url = `${base}redirect/host/protocolrelative`
+		opts = {
+			headers: new Headers({ 'authorization': 'abc' })
+		};
+		return fetch(url, opts).then(res => {
+			expect(res.url).to.equal(`${base}inspect`);
+			return res.json()
+			.then(res => {
+				expect(res.headers['authorization']).to.equal('abc');
+			});
+		});
+	});
+
+	it('should follow POST request redirect code 301 with GET', function () {
 		url = `${base}redirect/301`;
 		opts = {
 			method: 'POST'
