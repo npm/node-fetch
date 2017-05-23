@@ -10,6 +10,7 @@ const Stream = require('stream')
 
 const Blob = require('./blob.js')
 const BUFFER = Blob.BUFFER
+const parseJson = require('json-parse-helpfulerror').parse
 const FetchError = require('./fetch-error.js')
 
 let convert
@@ -119,6 +120,7 @@ Body.prototype = {
    * @return  Promise
    */
   json () {
+<<<<<<< HEAD
     return consumeBody.call(this).then((buffer) => {
       try {
         return JSON.parse(buffer.toString())
@@ -126,6 +128,11 @@ Body.prototype = {
         return Body.Promise.reject(new FetchError(`invalid json response body at ${this.url} reason: ${err.message}`, 'invalid-json'))
       }
     })
+||||||| parent of 1c810df... fix(json): improve JSON parse error reporting
+    return consumeBody.call(this).then(buffer => JSON.parse(buffer.toString()))
+=======
+    return consumeBody.call(this).then(buffer => parseJson(buffer.toString()))
+>>>>>>> 1c810df... fix(json): improve JSON parse error reporting
   },
 
   /**
