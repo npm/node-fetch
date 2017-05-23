@@ -69,6 +69,7 @@
   },
   "dependencies": {
     "encoding": "^0.1.11",
+    "json-parse-helpfulerror": "^1.0.3",
     "safe-buffer": "^5.0.1"
   }
 }
