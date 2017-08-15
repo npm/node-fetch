@@ -72,7 +72,7 @@
     "whatwg-url": "^5.0.0"
   },
   "dependencies": {
-    "json-parse-helpfulerror": "^1.0.3",
+    "json-parse-better-errors": "^1.0.0",
     "safe-buffer": "^5.1.1"
   }
 }

@@ -10,7 +10,7 @@ const Stream = require('stream')
 
 const Blob = require('./blob.js')
 const BUFFER = Blob.BUFFER
-const parseJson = require('json-parse-helpfulerror').parse
+const parseJson = require('json-parse-better-errors')
 const FetchError = require('./fetch-error.js')
 
 let convert
