@@ -63,16 +63,16 @@
     "parted": "^0.1.1",
     "promise": "^8.0.1",
     "resumer": "0.0.0",
-    "standard": "^10.0.2",
-    "standard-version": "^4.0.0",
+    "standard": "^10.0.3",
+    "standard-version": "^4.2.0",
     "string-to-arraybuffer": "^1.0.0",
     "url-search-params": "^1.0.2",
-    "weallbehave": "^1.0.3",
+    "weallbehave": "^1.2.0",
     "weallcontribute": "^1.0.8",
     "whatwg-url": "^5.0.0"
   },
   "dependencies": {
     "json-parse-helpfulerror": "^1.0.3",
-    "safe-buffer": "^5.0.1"
+    "safe-buffer": "^5.1.1"
   }
 }
