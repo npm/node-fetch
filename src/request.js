@@ -4,16 +4,48 @@
  * request.js
  *
  * Request class contains server only options
+ *
+ * All spec algorithm step numbers are based on https://fetch.spec.whatwg.org/commit-snapshots/ae716822cb3a61843226cd090eefc6589446c1d2/.
  */
 
-const url = require('url')
+const Url = require('url')
+const Stream = require('stream')
 const Headers = require('./headers.js')
+const exportNodeCompatibleHeaders = Headers.exportNodeCompatibleHeaders
 const Body = require('./body.js')
 const clone = Body.clone
 const extractContentType = Body.extractContentType
 const getTotalBytes = Body.getTotalBytes
 
-const PARSED_URL = Symbol('url')
+const INTERNALS = Symbol('Request internals')
+
+// fix an issue where "format", "parse" aren't a named export for node <10
+const parseUrl = Url.parse
+const formatUrl = Url.format
+
+const streamDestructionSupported = 'destroy' in Stream.Readable.prototype
+
+/**
+ * Check if a value is an instance of Request.
+ *
+ * @param   Mixed   input
+ * @return  Boolean
+ */
+function isRequest (input) {
+  return (
+    typeof input === 'object' &&
+    typeof input[INTERNALS] === 'object'
+  )
+}
+
+function isAbortSignal (signal) {
+  const proto = (
+    signal &&
+    typeof signal === 'object' &&
+    Object.getPrototypeOf(signal)
+  )
+  return !!(proto && proto.constructor.name === 'AbortSignal')
+}
 
 /**
  * Request class
@@ -28,31 +60,32 @@ class Request {
     let parsedURL
 
     // normalize input
-    if (!(input instanceof Request)) {
+    if (!isRequest(input)) {
       if (input && input.href) {
         // in order to support Node.js' Url objects; though WHATWG's URL objects
         // will fall into this branch also (since their `toString()` will return
         // `href` property anyway)
-        parsedURL = url.parse(input.href)
+        parsedURL = parseUrl(input.href)
       } else {
         // coerce input to a string before attempting to parse
-        parsedURL = url.parse(`${input}`)
+        parsedURL = parseUrl(`${input}`)
       }
       input = {}
     } else {
-      parsedURL = url.parse(input.url)
+      parsedURL = parseUrl(input.url)
     }
 
     let method = init.method || input.method || 'GET'
+    method = method.toUpperCase()
 
-    if ((init.body != null || (input instanceof Request && input.body !== null)) &&
+    if ((init.body != null || (isRequest(input) && input.body !== null)) &&
       (method === 'GET' || method === 'HEAD')) {
       throw new TypeError('Request with GET/HEAD method cannot have body')
     }
 
     let inputBody = init.body != null
       ? init.body
-      : input instanceof Request && input.body !== null
+      : isRequest(input) && input.body !== null
         ? clone(input)
         : null
 
@@ -61,19 +94,33 @@ class Request {
       size: init.size || input.size || 0
     })
 
-    // fetch spec options
-    this.method = method.toUpperCase()
-    this.redirect = init.redirect || input.redirect || 'follow'
-    this.headers = new Headers(init.headers || input.headers || {})
+    const headers = new Headers(init.headers || input.headers || {})
 
-    if (init.body != null) {
-      const contentType = extractContentType(this)
-      if (contentType !== null && !this.headers.has('Content-Type')) {
-        this.headers.append('Content-Type', contentType)
+    if (inputBody != null && !headers.has('Content-Type')) {
+      const contentType = extractContentType(inputBody)
+      if (contentType) {
+        headers.append('Content-Type', contentType)
       }
     }
 
-    // server only options
+    let signal = isRequest(input)
+      ? input.signal
+      : null
+    if ('signal' in init) signal = init.signal
+
+    if (signal != null && !isAbortSignal(signal)) {
+      throw new TypeError('Expected signal to be an instanceof AbortSignal')
+    }
+
+    this[INTERNALS] = {
+      method,
+      redirect: init.redirect || input.redirect || 'follow',
+      headers,
+      parsedURL,
+      signal
+    }
+
+    // node-fetch-only options
     this.follow = init.follow !== undefined
       ? init.follow : input.follow !== undefined
       ? input.follow : 20
@@ -82,18 +129,26 @@ class Request {
       ? input.compress : true
     this.counter = init.counter || input.counter || 0
     this.agent = init.agent || input.agent
+  }
 
-    this[PARSED_URL] = parsedURL
-    Object.defineProperty(this, Symbol.toStringTag, {
-      value: 'Request',
-      writable: false,
-      enumerable: false,
-      configurable: true
-    })
+  get method () {
+    return this[INTERNALS].method
   }
 
   get url () {
-    return url.format(this[PARSED_URL])
+    return formatUrl(this[INTERNALS].parsedURL)
+  }
+
+  get headers () {
+    return this[INTERNALS].headers
+  }
+
+  get redirect () {
+    return this[INTERNALS].redirect
+  }
+
+  get signal () {
+    return this[INTERNALS].signal
   }
 
   /**
@@ -109,19 +164,34 @@ class Request {
 Body.mixIn(Request.prototype)
 
 Object.defineProperty(Request.prototype, Symbol.toStringTag, {
-  value: 'RequestPrototype',
+  value: 'Request',
   writable: false,
   enumerable: false,
   configurable: true
 })
 
+Object.defineProperties(Request.prototype, {
+  method: { enumerable: true },
+  url: { enumerable: true },
+  headers: { enumerable: true },
+  redirect: { enumerable: true },
+  clone: { enumerable: true },
+  signal: { enumerable: true }
+})
+
 exports = module.exports = Request
 
+/**
+ * Convert a Request to Node.js http request options.
+ *
+ * @param   Request  A Request instance
+ * @return  Object   The options object to be passed to http.request
+ */
 exports.getNodeRequestOptions = function getNodeRequestOptions (request) {
-  const parsedURL = request[PARSED_URL]
-  const headers = new Headers(request.headers)
+  const parsedURL = request[INTERNALS].parsedURL
+  const headers = new Headers(request[INTERNALS].headers)
 
-  // fetch step 3
+  // fetch step 1.3
   if (!headers.has('Accept')) {
     headers.set('Accept', '*/*')
   }
@@ -135,7 +205,15 @@ exports.getNodeRequestOptions = function getNodeRequestOptions (request) {
     throw new TypeError('Only HTTP(S) protocols are supported')
   }
 
-  // HTTP-network-or-cache fetch steps 5-9
+  if (
+    request.signal &&
+    request.body instanceof Stream.Readable &&
+    !streamDestructionSupported
+  ) {
+    throw new Error('Cancellation of streamed requests with AbortSignal is not supported in node < 8')
+  }
+
+  // HTTP-network-or-cache fetch steps 2.4-2.7
   let contentLengthValue = null
   if (request.body == null && /^(POST|PUT)$/i.test(request.method)) {
     contentLengthValue = '0'
@@ -150,25 +228,26 @@ exports.getNodeRequestOptions = function getNodeRequestOptions (request) {
     headers.set('Content-Length', contentLengthValue)
   }
 
-  // HTTP-network-or-cache fetch step 12
+  // HTTP-network-or-cache fetch step 2.11
   if (!headers.has('User-Agent')) {
     headers.set('User-Agent', 'node-fetch/1.0 (+https://github.com/bitinn/node-fetch)')
   }
 
-  // HTTP-network-or-cache fetch step 16
-  if (request.compress) {
+  // HTTP-network-or-cache fetch step 2.15
+  if (request.compress && !headers.has('Accept-Encoding')) {
     headers.set('Accept-Encoding', 'gzip,deflate')
   }
+
   if (!headers.has('Connection') && !request.agent) {
     headers.set('Connection', 'close')
   }
 
-  // HTTP-network fetch step 4
+  // HTTP-network fetch step 4.2
   // chunked encoding is handled by Node.js
 
   return Object.assign({}, parsedURL, {
     method: request.method,
-    headers: headers.raw(),
+    headers: exportNodeCompatibleHeaders(headers),
     agent: request.agent
   })
 }

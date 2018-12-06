@@ -8,8 +8,11 @@ env:
   - FORMDATA_VERSION=2.1.0
 before_script:
   - 'if [ "$FORMDATA_VERSION" ]; then npm install form-data@^$FORMDATA_VERSION; fi'
-before_install: npm install -g npm
-script: npm run coverage
+script:
+  - npm uninstall encoding
+  - npm run coverage
+  - npm install encoding
+  - npm run coverage
 cache:
   directories:
     - node_modules

@@ -6,14 +6,30 @@ const chaiPromised = require('chai-as-promised');
 const chaiIterator = require('chai-iterator');
 const chaiString = require('chai-string');
 const then = require('promise');
-const spawn = require('child_process').spawn;
-const stream = require('stream');
 const resumer = require('resumer');
 const FormData = require('form-data');
-const parseURL = require('url').parse
-const URL = require('whatwg-url').URL;
+const stringToArrayBuffer = require('string-to-arraybuffer');
+const URLSearchParams_Polyfill = require('url-search-params');
+const URL = require('whatwg-url').URL
+const AbortController = require('abortcontroller-polyfill/dist/abortcontroller').AbortController
+const AbortController2 = require('abort-controller')
+
+const spawn = require('child_process').spawn;
 const http = require('http');
 const fs = require('fs');
+const path = require('path');
+const stream = require('stream');
+const parseURL = require('url').parse;
+const URLSearchParams = require('url').URLSearchParams;
+const lookup = require('dns').lookup;
+const vm = require('vm');
+
+const ctx = vm.runInNewContext('this')
+const ArrayBuffer = ctx.VMArrayBuffer || Buffer
+const Uint8Array = ctx.VMUint8Array || Buffer
+
+let convert;
+try { convert = require('encoding').convert; } catch(e) { }
 
 chai.use(chaiPromised);
 chai.use(chaiIterator);
@@ -39,10 +55,11 @@ const supportToString = ({
 	[Symbol.toStringTag]: 'z'
 }).toString() === '[object z]';
 
+const supportStreamDestroy = 'destroy' in stream.Readable.prototype;
+
 const local = new TestServer();
 const base = `http://${local.hostname}:${local.port}/`;
 const redirectBase = `http://127.0.0.1:${local.port}/`;
-let url, opts;
 
 before(done => {
 	local.start(done);
@@ -54,14 +71,14 @@ after(done => {
 
 describe('node-fetch', () => {
 	it('should return a promise', function() {
-		url = 'http://example.com/';
+		const url = `${base}hello`;
 		const p = fetch(url);
 		expect(p).to.be.an.instanceof(fetch.Promise);
 		expect(p).to.have.property('then');
 	});
 
 	it('should allow custom promise', function() {
-		url = 'http://example.com/';
+		const url = `${base}hello`;
 		const old = fetch.Promise;
 		fetch.Promise = then;
 		expect(fetch(url)).to.be.an.instanceof(then);
@@ -70,7 +87,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should throw error when no promise implementation are found', function() {
-		url = 'http://example.com/';
+		const url = `${base}hello`;
 		const old = fetch.Promise;
 		fetch.Promise = undefined;
 		expect(() => {
@@ -93,29 +110,29 @@ describe('node-fetch', () => {
 	});
 
 	it('should reject with error if url is protocol relative', function() {
-		url = '//example.com/';
+		const url = '//example.com/';
 		return expect(fetch(url)).to.eventually.be.rejectedWith(TypeError, 'Only absolute URLs are supported');
 	});
 
 	it('should reject with error if url is relative path', function() {
-		url = '/some/path';
+		const url = '/some/path';
 		return expect(fetch(url)).to.eventually.be.rejectedWith(TypeError, 'Only absolute URLs are supported');
 	});
 
 	it('should reject with error if protocol is unsupported', function() {
-		url = 'ftp://example.com/';
+		const url = 'ftp://example.com/';
 		return expect(fetch(url)).to.eventually.be.rejectedWith(TypeError, 'Only HTTP(S) protocols are supported');
 	});
 
 	it('should reject with error on network failure', function() {
-		url = 'http://localhost:50000/';
+		const url = 'http://localhost:50000/';
 		return expect(fetch(url)).to.eventually.be.rejected
 			.and.be.an.instanceOf(FetchError)
 			.and.include({ type: 'system', code: 'ECONNREFUSED', errno: 'ECONNREFUSED' });
 	});
 
 	it('should resolve into response', function() {
-		url = `${base}hello`;
+		const url = `${base}hello`;
 		return fetch(url).then(res => {
 			expect(res).to.be.an.instanceof(Response);
 			expect(res.headers).to.be.an.instanceof(Headers);
@@ -130,7 +147,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should accept plain text response', function() {
-		url = `${base}plain`;
+		const url = `${base}plain`;
 		return fetch(url).then(res => {
 			expect(res.headers.get('content-type')).to.equal('text/plain');
 			return res.text().then(result => {
@@ -142,7 +159,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should accept html response (like plain text)', function() {
-		url = `${base}html`;
+		const url = `${base}html`;
 		return fetch(url).then(res => {
 			expect(res.headers.get('content-type')).to.equal('text/html');
 			return res.text().then(result => {
@@ -154,7 +171,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should accept json response', function() {
-		url = `${base}json`;
+		const url = `${base}json`;
 		return fetch(url).then(res => {
 			expect(res.headers.get('content-type')).to.equal('application/json');
 			return res.json().then(result => {
@@ -166,8 +183,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should send request with custom headers', function() {
-		url = `${base}inspect`;
-		opts = {
+		const url = `${base}inspect`;
+		const opts = {
 			headers: { 'x-custom-header': 'abc' }
 		};
 		return fetch(url, opts).then(res => {
@@ -178,8 +195,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should accept headers instance', function() {
-		url = `${base}inspect`;
-		opts = {
+		const url = `${base}inspect`;
+		const opts = {
 			headers: new Headers({ 'x-custom-header': 'abc' })
 		};
 		return fetch(url, opts).then(res => {
@@ -190,8 +207,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should accept custom host header', function() {
-		url = `${base}inspect`;
-		opts = {
+		const url = `${base}inspect`;
+		const opts = {
 			headers: {
 				host: 'example.com'
 			}
@@ -203,8 +220,22 @@ describe('node-fetch', () => {
 		});
 	});
 
+	it('should accept custom HoSt header', function() {
+		const url = `${base}inspect`;
+		const opts = {
+			headers: {
+				HoSt: 'example.com'
+			}
+		};
+		return fetch(url, opts).then(res => {
+			return res.json();
+		}).then(res => {
+			expect(res.headers['host']).to.equal('example.com');
+		});
+	});
+
 	it('should follow redirect code 301', function() {
-		url = `${base}redirect/301`;
+		const url = `${base}redirect/301`;
 		return fetch(url).then(res => {
 			expect(res.url).to.equal(`${base}inspect`);
 			expect(res.status).to.equal(200);
@@ -213,7 +244,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should follow redirect code 302', function() {
-		url = `${base}redirect/302`;
+		const url = `${base}redirect/302`;
 		return fetch(url).then(res => {
 			expect(res.url).to.equal(`${base}inspect`);
 			expect(res.status).to.equal(200);
@@ -221,7 +252,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should follow redirect code 303', function() {
-		url = `${base}redirect/303`;
+		const url = `${base}redirect/303`;
 		return fetch(url).then(res => {
 			expect(res.url).to.equal(`${base}inspect`);
 			expect(res.status).to.equal(200);
@@ -229,7 +260,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should follow redirect code 307', function() {
-		url = `${base}redirect/307`;
+		const url = `${base}redirect/307`;
 		return fetch(url).then(res => {
 			expect(res.url).to.equal(`${base}inspect`);
 			expect(res.status).to.equal(200);
@@ -237,7 +268,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should follow redirect code 308', function() {
-		url = `${base}redirect/308`;
+		const url = `${base}redirect/308`;
 		return fetch(url).then(res => {
 			expect(res.url).to.equal(`${base}inspect`);
 			expect(res.status).to.equal(200);
@@ -245,7 +276,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should follow redirect chain', function() {
-		url = `${base}redirect/chain`;
+		const url = `${base}redirect/chain`;
 		return fetch(url).then(res => {
 			expect(res.url).to.equal(`${base}inspect`);
 			expect(res.status).to.equal(200);
@@ -253,8 +284,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should remove authorization header on redirect if hostname changed', function () {
-		url = `${base}redirect/host/different`
-		opts = {
+		const url = `${base}redirect/host/different`
+		const opts = {
 			headers: new Headers({ 'authorization': 'abc' })
 		};
 		return fetch(url, opts).then(res => {
@@ -267,8 +298,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should preserve authorization header on redirect if hostname did not change', function () {
-		url = `${base}redirect/host/same`
-		opts = {
+		const url = `${base}redirect/host/same`
+		const opts = {
 			headers: new Headers({ 'authorization': 'abc' })
 		};
 		return fetch(url, opts).then(res => {
@@ -281,8 +312,8 @@ describe('node-fetch', () => {
 	});
 	
 	it('should preserve authorization header on redirect if url is relative', function () {
-		url = `${base}redirect/host/relativeuri`
-		opts = {
+		const url = `${base}redirect/host/relativeuri`
+		const opts = {
 			headers: new Headers({ 'authorization': 'abc' })
 		};
 		return fetch(url, opts).then(res => {
@@ -295,8 +326,8 @@ describe('node-fetch', () => {
 	});
 	
 	it('should preserve authorization header on redirect if url is protocol relative', function () {
-		url = `${base}redirect/host/protocolrelative`
-		opts = {
+		const url = `${base}redirect/host/protocolrelative`
+		const opts = {
 			headers: new Headers({ 'authorization': 'abc' })
 		};
 		return fetch(url, opts).then(res => {
@@ -309,8 +340,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should follow POST request redirect code 301 with GET', function () {
-		url = `${base}redirect/301`;
-		opts = {
+		const url = `${base}redirect/301`;
+		const opts = {
 			method: 'POST'
 			, body: 'a=1'
 		};
@@ -320,15 +351,31 @@ describe('node-fetch', () => {
 			return res.json().then(result => {
 				expect(result.method).to.equal('GET');
 				expect(result.body).to.equal('');
+			});
+		});
+	});
+
+	it('should follow PATCH request redirect code 301 with PATCH', function() {
+		const url = `${base}redirect/301`;
+		const opts = {
+			method: 'PATCH',
+			body: 'a=1'
+		};
+		return fetch(url, opts).then(res => {
+			expect(res.url).to.equal(`${base}inspect`);
+			expect(res.status).to.equal(200);
+			return res.json().then(res => {
+				expect(res.method).to.equal('PATCH');
+				expect(res.body).to.equal('a=1');
 			});
 		});
 	});
 
 	it('should follow POST request redirect code 302 with GET', function() {
-		url = `${base}redirect/302`;
-		opts = {
-			method: 'POST'
-			, body: 'a=1'
+		const url = `${base}redirect/302`;
+		const opts = {
+			method: 'POST',
+			body: 'a=1'
 		};
 		return fetch(url, opts).then(res => {
 			expect(res.url).to.equal(`${base}inspect`);
@@ -336,15 +383,31 @@ describe('node-fetch', () => {
 			return res.json().then(result => {
 				expect(result.method).to.equal('GET');
 				expect(result.body).to.equal('');
+			});
+		});
+	});
+
+	it('should follow PATCH request redirect code 302 with PATCH', function() {
+		const url = `${base}redirect/302`;
+		const opts = {
+			method: 'PATCH',
+			body: 'a=1'
+		};
+		return fetch(url, opts).then(res => {
+			expect(res.url).to.equal(`${base}inspect`);
+			expect(res.status).to.equal(200);
+			return res.json().then(res => {
+				expect(res.method).to.equal('PATCH');
+				expect(res.body).to.equal('a=1');
 			});
 		});
 	});
 
 	it('should follow redirect code 303 with GET', function() {
-		url = `${base}redirect/303`;
-		opts = {
-			method: 'PUT'
-			, body: 'a=1'
+		const url = `${base}redirect/303`;
+		const opts = {
+			method: 'PUT',
+			body: 'a=1'
 		};
 		return fetch(url, opts).then(res => {
 			expect(res.url).to.equal(`${base}inspect`);
@@ -356,9 +419,36 @@ describe('node-fetch', () => {
 		});
 	});
 
+	it('should follow PATCH request redirect code 307 with PATCH', function() {
+		const url = `${base}redirect/307`;
+		const opts = {
+			method: 'PATCH',
+			body: 'a=1'
+		};
+		return fetch(url, opts).then(res => {
+			expect(res.url).to.equal(`${base}inspect`);
+			expect(res.status).to.equal(200);
+			return res.json().then(result => {
+				expect(result.method).to.equal('PATCH');
+				expect(result.body).to.equal('a=1');
+			});
+		});
+	});
+
+	it('should not follow non-GET redirect if body is a readable stream', function() {
+		const url = `${base}redirect/307`;
+		const opts = {
+			method: 'PATCH',
+			body: resumer().queue('a=1').end()
+		};
+		return expect(fetch(url, opts)).to.eventually.be.rejected
+			.and.be.an.instanceOf(FetchError)
+			.and.have.property('type', 'unsupported-redirect');
+	});
+
 	it('should obey maximum redirect, reject case', function() {
-		url = `${base}redirect/chain`;
-		opts = {
+		const url = `${base}redirect/chain`;
+		const opts = {
 			follow: 1
 		}
 		return expect(fetch(url, opts)).to.eventually.be.rejected
@@ -367,8 +457,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should obey redirect chain, resolve case', function() {
-		url = `${base}redirect/chain`;
-		opts = {
+		const url = `${base}redirect/chain`;
+		const opts = {
 			follow: 2
 		}
 		return fetch(url, opts).then(res => {
@@ -378,8 +468,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should allow not following redirect', function() {
-		url = `${base}redirect/301`;
-		opts = {
+		const url = `${base}redirect/301`;
+		const opts = {
 			follow: 0
 		}
 		return expect(fetch(url, opts)).to.eventually.be.rejected
@@ -388,8 +478,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should support redirect mode, manual flag', function() {
-		url = `${base}redirect/301`;
-		opts = {
+		const url = `${base}redirect/301`;
+		const opts = {
 			redirect: 'manual'
 		};
 		return fetch(url, opts).then(res => {
@@ -400,8 +490,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should support redirect mode, error flag', function() {
-		url = `${base}redirect/301`;
-		opts = {
+		const url = `${base}redirect/301`;
+		const opts = {
 			redirect: 'error'
 		};
 		return expect(fetch(url, opts)).to.eventually.be.rejected
@@ -410,8 +500,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should support redirect mode, manual flag when there is no redirect', function() {
-		url = `${base}hello`;
-		opts = {
+		const url = `${base}hello`;
+		const opts = {
 			redirect: 'manual'
 		};
 		return fetch(url, opts).then(res => {
@@ -422,8 +512,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should follow redirect code 301 and keep existing headers', function() {
-		url = `${base}redirect/301`;
-		opts = {
+		const url = `${base}redirect/301`;
+		const opts = {
 			headers: new Headers({ 'x-custom-header': 'abc' })
 		};
 		return fetch(url, opts).then(res => {
@@ -434,16 +524,18 @@ describe('node-fetch', () => {
 		});
 	});
 
-	it('should reject broken redirect', function() {
-		url = `${base}error/redirect`;
-		return expect(fetch(url)).to.eventually.be.rejected
-			.and.be.an.instanceOf(FetchError)
-			.and.have.property('type', 'invalid-redirect');
+	it('should treat broken redirect as ordinary response (follow)', function() {
+		const url = `${base}redirect/no-location`;
+		return fetch(url).then(res => {
+			expect(res.url).to.equal(url);
+			expect(res.status).to.equal(301);
+			expect(res.headers.get('location')).to.be.null;
+		});
 	});
 
-	it('should not reject broken redirect under manual redirect', function() {
-		url = `${base}error/redirect`;
-		opts = {
+	it('should treat broken redirect as ordinary response (manual)', function() {
+		const url = `${base}redirect/no-location`;
+		const opts = {
 			redirect: 'manual'
 		};
 		return fetch(url, opts).then(res => {
@@ -453,8 +545,22 @@ describe('node-fetch', () => {
 		});
 	});
 
+	it('should ignore invalid headers', function() {
+		const url = `${base}invalid-header`;
+		return fetch(url).then(res => {
+			expect(res.headers.get('Invalid-Header')).to.be.null;
+			expect(res.headers.get('Invalid-Header-Value')).to.be.null;
+			expect(res.headers.get('Set-Cookie')).to.be.null;
+			expect(Array.from(res.headers.keys()).length).to.equal(4);
+			expect(res.headers.has('Connection')).to.be.true;
+			expect(res.headers.has('Content-Type')).to.be.true;
+			expect(res.headers.has('Date')).to.be.true;
+			expect(res.headers.has('Transfer-Encoding')).to.be.true;
+		});
+	});
+
 	it('should handle client-error response', function() {
-		url = `${base}error/400`;
+		const url = `${base}error/400`;
 		return fetch(url).then(res => {
 			expect(res.headers.get('content-type')).to.equal('text/plain');
 			expect(res.status).to.equal(400);
@@ -469,7 +575,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should handle server-error response', function() {
-		url = `${base}error/500`;
+		const url = `${base}error/500`;
 		return fetch(url).then(res => {
 			expect(res.headers.get('content-type')).to.equal('text/plain');
 			expect(res.status).to.equal(500);
@@ -484,29 +590,31 @@ describe('node-fetch', () => {
 	});
 
 	it('should handle network-error response', function() {
-		url = `${base}error/reset`;
+		const url = `${base}error/reset`;
 		return expect(fetch(url)).to.eventually.be.rejected
 			.and.be.an.instanceOf(FetchError)
 			.and.have.property('code', 'ECONNRESET');
 	});
 
 	it('should handle DNS-error response', function() {
-		url = 'http://domain.invalid';
+		const url = 'http://domain.invalid';
 		return expect(fetch(url)).to.eventually.be.rejected
 			.and.be.an.instanceOf(FetchError)
 			.and.have.property('code', 'ENOTFOUND');
 	});
 
 	it('should reject invalid json response', function() {
-		url = `${base}error/json`;
+		const url = `${base}error/json`;
 		return fetch(url).then(res => {
 			expect(res.headers.get('content-type')).to.equal('application/json');
-			return expect(res.json()).to.eventually.be.rejectedWith(Error);
+			return expect(res.json()).to.eventually.be.rejected
+				.and.be.an.instanceOf(FetchError)
+				.and.include({ type: 'invalid-json' });
 		});
 	});
 
 	it('should handle no content response', function() {
-		url = `${base}no-content`;
+		const url = `${base}no-content`;
 		return fetch(url).then(res => {
 			expect(res.status).to.equal(204);
 			expect(res.statusText).to.equal('No Content');
@@ -518,8 +626,20 @@ describe('node-fetch', () => {
 		});
 	});
 
+	it('should reject when trying to parse no content response as json', function() {
+		const url = `${base}no-content`;
+		return fetch(url).then(res => {
+			expect(res.status).to.equal(204);
+			expect(res.statusText).to.equal('No Content');
+			expect(res.ok).to.be.true;
+			return expect(res.json()).to.eventually.be.rejected
+				.and.be.an.instanceOf(FetchError)
+				.and.include({ type: 'invalid-json' });
+		});
+	});
+
 	it('should handle no content response with gzip encoding', function() {
-		url = `${base}no-content/gzip`;
+		const url = `${base}no-content/gzip`;
 		return fetch(url).then(res => {
 			expect(res.status).to.equal(204);
 			expect(res.statusText).to.equal('No Content');
@@ -533,7 +653,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should handle not modified response', function() {
-		url = `${base}not-modified`;
+		const url = `${base}not-modified`;
 		return fetch(url).then(res => {
 			expect(res.status).to.equal(304);
 			expect(res.statusText).to.equal('Not Modified');
@@ -546,7 +666,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should handle not modified response with gzip encoding', function() {
-		url = `${base}not-modified/gzip`;
+		const url = `${base}not-modified/gzip`;
 		return fetch(url).then(res => {
 			expect(res.status).to.equal(304);
 			expect(res.statusText).to.equal('Not Modified');
@@ -560,7 +680,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should decompress gzip response', function() {
-		url = `${base}gzip`;
+		const url = `${base}gzip`;
 		return fetch(url).then(res => {
 			expect(res.headers.get('content-type')).to.equal('text/plain');
 			return res.text().then(result => {
@@ -571,7 +691,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should decompress slightly invalid gzip response', function() {
-		url = `${base}gzip-truncated`;
+		const url = `${base}gzip-truncated`;
 		return fetch(url).then(res => {
 			expect(res.headers.get('content-type')).to.equal('text/plain');
 			return res.text().then(result => {
@@ -582,7 +702,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should decompress deflate response', function() {
-		url = `${base}deflate`;
+		const url = `${base}deflate`;
 		return fetch(url).then(res => {
 			expect(res.headers.get('content-type')).to.equal('text/plain');
 			return res.text().then(result => {
@@ -593,7 +713,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should decompress deflate raw response from old apache server', function() {
-		url = `${base}deflate-raw`;
+		const url = `${base}deflate-raw`;
 		return fetch(url).then(res => {
 			expect(res.headers.get('content-type')).to.equal('text/plain');
 			return res.text().then(result => {
@@ -604,7 +724,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should skip decompression if unsupported', function() {
-		url = `${base}sdch`;
+		const url = `${base}sdch`;
 		return fetch(url).then(res => {
 			expect(res.headers.get('content-type')).to.equal('text/plain');
 			return res.text().then(result => {
@@ -615,7 +735,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should reject if response compression is invalid', function() {
-		url = `${base}invalid-content-encoding`;
+		const url = `${base}invalid-content-encoding`;
 		return fetch(url).then(res => {
 			expect(res.headers.get('content-type')).to.equal('text/plain');
 			return expect(res.text()).to.eventually.be.rejected
@@ -624,9 +744,43 @@ describe('node-fetch', () => {
 		});
 	});
 
+	it('should handle errors on the body stream even if it is not used', function(done) {
+		const url = `${base}invalid-content-encoding`;
+		fetch(url)
+			.then(res => {
+				expect(res.status).to.equal(200);
+			})
+			.catch(() => {})
+			.then(() => {
+				// Wait a few ms to see if a uncaught error occurs
+				setTimeout(() => {
+					done();
+				}, 50);
+			});
+	});
+
+	it('should collect handled errors on the body stream to reject if the body is used later', function() {
+
+		function delay(value) {
+			return new Promise((resolve) => {
+				setTimeout(() => {
+					resolve(value)
+				}, 100);
+			});
+		}
+
+		const url = `${base}invalid-content-encoding`;
+		return fetch(url).then(delay).then(res => {
+			expect(res.headers.get('content-type')).to.equal('text/plain');
+			return expect(res.text()).to.eventually.be.rejected
+				.and.be.an.instanceOf(FetchError)
+				.and.have.property('code', 'Z_DATA_ERROR');
+		});
+	});
+
 	it('should allow disabling auto decompression', function() {
-		url = `${base}gzip`;
-		opts = {
+		const url = `${base}gzip`;
+		const opts = {
 			compress: false
 		};
 		return fetch(url, opts).then(res => {
@@ -638,10 +792,23 @@ describe('node-fetch', () => {
 		});
 	});
 
+	it('should not overwrite existing accept-encoding header when auto decompression is true', function() {
+		const url = `${base}inspect`;
+		const opts = {
+			compress: true,
+			headers: {
+				'Accept-Encoding': 'gzip'
+			}
+		};
+		return fetch(url, opts).then(res => res.json()).then(res => {
+			expect(res.headers['accept-encoding']).to.equal('gzip');
+		});
+	});
+
 	it('should allow custom timeout', function() {
 		this.timeout(500);
-		url = `${base}timeout`;
-		opts = {
+		const url = `${base}timeout`;
+		const opts = {
 			timeout: 100
 		};
 		return expect(fetch(url, opts)).to.eventually.be.rejected
@@ -651,8 +818,8 @@ describe('node-fetch', () => {
 
 	it('should allow custom timeout on response body', function() {
 		this.timeout(500);
-		url = `${base}slow`;
-		opts = {
+		const url = `${base}slow`;
+		const opts = {
 			timeout: 100
 		};
 		return fetch(url, opts).then(res => {
@@ -664,70 +831,311 @@ describe('node-fetch', () => {
 	});
 
 	it('should clear internal timeout on fetch response', function (done) {
-		this.timeout(1000);
-		spawn('node', ['-e', `require('./')('${base}hello', { timeout: 5000 })`])
+		this.timeout(2000);
+		spawn('node', ['-e', `require('./')('${base}hello', { timeout: 10000 })`])
 			.on('exit', () => {
 				done();
 			});
 	});
 
 	it('should clear internal timeout on fetch redirect', function (done) {
-		this.timeout(1000);
-		spawn('node', ['-e', `require('./')('${base}redirect/301', { timeout: 5000 })`])
+		this.timeout(2000);
+		spawn('node', ['-e', `require('./')('${base}redirect/301', { timeout: 10000 })`])
 			.on('exit', () => {
 				done();
 			});
 	});
 
 	it('should clear internal timeout on fetch error', function (done) {
-		this.timeout(1000);
-		spawn('node', ['-e', `require('./')('${base}error/reset', { timeout: 5000 })`])
+		this.timeout(2000);
+		spawn('node', ['-e', `require('./')('${base}error/reset', { timeout: 10000 })`])
 			.on('exit', () => {
 				done();
 			});
 	});
 
+	it('should support request cancellation with signal', function () {
+		this.timeout(500);
+		const controller = new AbortController();
+		const controller2 = new AbortController2();
+
+		const fetches = [
+			fetch(`${base}timeout`, { signal: controller.signal }),
+			fetch(`${base}timeout`, { signal: controller2.signal }),
+			fetch(
+				`${base}timeout`,
+				{
+					method: 'POST',
+					signal: controller.signal,
+					headers: {
+						'Content-Type': 'application/json',
+						body: JSON.stringify({ hello: 'world' })
+					}
+				}
+			)
+		];
+		setTimeout(() => {
+			controller.abort();
+			controller2.abort();
+		}, 100);
+
+		return Promise.all(fetches.map(fetched => expect(fetched)
+			.to.eventually.be.rejected
+			.and.be.an.instanceOf(Error)
+			.and.include({
+				type: 'aborted',
+				name: 'AbortError',
+			})
+		));
+	});
+
+	it('should reject immediately if signal has already been aborted', function () {
+		const url = `${base}timeout`;
+		const controller = new AbortController();
+		const opts = {
+			signal: controller.signal
+		};
+		controller.abort();
+		const fetched = fetch(url, opts);
+		return expect(fetched).to.eventually.be.rejected
+			.and.be.an.instanceOf(Error)
+			.and.include({
+				type: 'aborted',
+				name: 'AbortError',
+			});
+	});
+
+	it('should clear internal timeout when request is cancelled with an AbortSignal', function(done) {
+		this.timeout(2000);
+		const script = `
+			var AbortController = require('abortcontroller-polyfill/dist/cjs-ponyfill').AbortController;
+			var controller = new AbortController();
+			require('./')(
+				'${base}timeout',
+				{ signal: controller.signal, timeout: 10000 }
+			);
+			setTimeout(function () { controller.abort(); }, 100);
+		`
+		spawn('node', ['-e', script])
+			.on('exit', () => {
+				done();
+			});
+	});
+
+	it('should remove internal AbortSignal event listener after request is aborted', function () {
+		const controller = new AbortController();
+		const signal = controller.signal;
+		const promise = fetch(
+			`${base}timeout`,
+			{ signal }
+		);
+		const result = expect(promise).to.eventually.be.rejected
+			.and.be.an.instanceof(Error)
+			.and.have.property('name', 'AbortError')
+			.then(() => {
+				expect(signal.listeners.abort.length).to.equal(0);
+			});
+		controller.abort();
+		return result;
+	});
+
+	it('should allow redirects to be aborted', function() {
+		const abortController = new AbortController();
+		const request = new Request(`${base}redirect/slow`, {
+			signal: abortController.signal
+		});
+		setTimeout(() => {
+			abortController.abort();
+		}, 50);
+		return expect(fetch(request)).to.be.eventually.rejected
+			.and.be.an.instanceOf(Error)
+			.and.have.property('name', 'AbortError');
+	});
+
+	it('should allow redirected response body to be aborted', function() {
+		const abortController = new AbortController();
+		const request = new Request(`${base}redirect/slow-stream`, {
+			signal: abortController.signal
+		});
+		return expect(fetch(request).then(res => {
+			expect(res.headers.get('content-type')).to.equal('text/plain');
+			const result = res.text();
+			abortController.abort();
+			return result;
+		})).to.be.eventually.rejected
+			.and.be.an.instanceOf(Error)
+			.and.have.property('name', 'AbortError');
+	});
+
+	it('should remove internal AbortSignal event listener after request and response complete without aborting', () => {
+		const controller = new AbortController();
+		const signal = controller.signal;
+		const fetchHtml = fetch(`${base}html`, { signal })
+			.then(res => res.text());
+		const fetchResponseError = fetch(`${base}error/reset`, { signal });
+		const fetchRedirect = fetch(`${base}redirect/301`, { signal }).then(res => res.json());
+		return Promise.all([
+			expect(fetchHtml).to.eventually.be.fulfilled.and.equal('<html></html>'),
+			expect(fetchResponseError).to.be.eventually.rejected,
+			expect(fetchRedirect).to.eventually.be.fulfilled,
+		]).then(() => {
+			expect(signal.listeners.abort.length).to.equal(0)
+		});
+	});
+
+	it('should reject response body with AbortError when aborted before stream has been read completely', () => {
+		const controller = new AbortController();
+		return expect(fetch(
+			`${base}slow`,
+			{ signal: controller.signal }
+		))
+			.to.eventually.be.fulfilled
+			.then((res) => {
+				const promise = res.text();
+				controller.abort();
+				return expect(promise)
+					.to.eventually.be.rejected
+					.and.be.an.instanceof(Error)
+					.and.have.property('name', 'AbortError');
+			});
+	});
+
+	it('should reject response body methods immediately with AbortError when aborted before stream is disturbed', () => {
+		const controller = new AbortController();
+		return expect(fetch(
+			`${base}slow`,
+			{ signal: controller.signal }
+		))
+			.to.eventually.be.fulfilled
+			.then((res) => {
+				controller.abort();
+				return expect(res.text())
+					.to.eventually.be.rejected
+					.and.be.an.instanceof(Error)
+					.and.have.property('name', 'AbortError');
+			});
+	});
+
+	it('should emit error event to response body with an AbortError when aborted before underlying stream is closed', (done) => {
+		const controller = new AbortController();
+		expect(fetch(
+			`${base}slow`,
+			{ signal: controller.signal }
+		))
+			.to.eventually.be.fulfilled
+			.then((res) => {
+				res.body.on('error', (err) => {
+					expect(err)
+						.to.be.an.instanceof(Error)
+						.and.have.property('name', 'AbortError');
+					done();
+				});
+				controller.abort();
+			});
+	});
+
+	(supportStreamDestroy ? it : it.skip)('should cancel request body of type Stream with AbortError when aborted', () => {
+		const controller = new AbortController();
+		const body = new stream.Readable({ objectMode: true });
+		body._read = () => {};
+		const promise = fetch(
+			`${base}slow`,
+			{ signal: controller.signal, body, method: 'POST' }
+		);
+
+		const result = Promise.all([
+			new Promise((resolve, reject) => {
+				body.on('error', (error) => {
+					try {
+						expect(error).to.be.an.instanceof(Error).and.have.property('name', 'AbortError')
+						resolve();
+					} catch (err) {
+						reject(err);
+					}
+				});
+			}),
+			expect(promise).to.eventually.be.rejected
+				.and.be.an.instanceof(Error)
+				.and.have.property('name', 'AbortError')
+		]);
+
+		controller.abort();
+
+		return result;
+	});
+
+	(supportStreamDestroy ? it.skip : it)('should immediately reject when attempting to cancel streamed Requests in node < 8', () => {
+		const controller = new AbortController();
+		const body = new stream.Readable({ objectMode: true });
+		body._read = () => {};
+		const promise = fetch(
+			`${base}slow`,
+			{ signal: controller.signal, body, method: 'POST' }
+		);
+
+		return expect(promise).to.eventually.be.rejected
+			.and.be.an.instanceof(Error)
+			.and.have.property('message').includes('not supported');
+	});
+
+	it('should throw a TypeError if a signal is not of type AbortSignal', () => {
+		return Promise.all([
+			expect(fetch(`${base}inspect`, { signal: {} }))
+				.to.be.eventually.rejected
+				.and.be.an.instanceof(TypeError)
+				.and.have.property('message').includes('AbortSignal'),
+			expect(fetch(`${base}inspect`, { signal: '' }))
+				.to.be.eventually.rejected
+				.and.be.an.instanceof(TypeError)
+				.and.have.property('message').includes('AbortSignal'),
+			expect(fetch(`${base}inspect`, { signal: Object.create(null) }))
+				.to.be.eventually.rejected
+				.and.be.an.instanceof(TypeError)
+				.and.have.property('message').includes('AbortSignal'),
+		]);
+	});
+
 	it('should set default User-Agent', function () {
-		url = `${base}inspect`;
-		fetch(url).then(res => res.json()).then(res => {
+		const url = `${base}inspect`;
+		return fetch(url).then(res => res.json()).then(res => {
 			expect(res.headers['user-agent']).to.startWith('node-fetch/');
 		});
 	});
 
 	it('should allow setting User-Agent', function () {
-		url = `${base}inspect`;
-		opts = {
+		const url = `${base}inspect`;
+		const opts = {
 			headers: {
 				'user-agent': 'faked'
 			}
 		};
-		fetch(url, opts).then(res => res.json()).then(res => {
+		return fetch(url, opts).then(res => res.json()).then(res => {
 			expect(res.headers['user-agent']).to.equal('faked');
 		});
 	});
 
 	it('should set default Accept header', function () {
-		url = `${base}inspect`;
+		const url = `${base}inspect`;
 		fetch(url).then(res => res.json()).then(res => {
 			expect(res.headers.accept).to.equal('*/*');
 		});
 	});
 
 	it('should allow setting Accept header', function () {
-		url = `${base}inspect`;
-		opts = {
+		const url = `${base}inspect`;
+		const opts = {
 			headers: {
 				'accept': 'application/json'
 			}
 		};
-		fetch(url, opts).then(res => res.json()).then(res => {
+		return fetch(url, opts).then(res => res.json()).then(res => {
 			expect(res.headers.accept).to.equal('application/json');
 		});
 	});
 
 	it('should allow POST request', function() {
-		url = `${base}inspect`;
-		opts = {
+		const url = `${base}inspect`;
+		const opts = {
 			method: 'POST'
 		};
 		return fetch(url, opts).then(res => {
@@ -741,10 +1149,10 @@ describe('node-fetch', () => {
 	});
 
 	it('should allow POST request with string body', function() {
-		url = `${base}inspect`;
-		opts = {
-			method: 'POST'
-			, body: 'a=1'
+		const url = `${base}inspect`;
+		const opts = {
+			method: 'POST',
+			body: 'a=1'
 		};
 		return fetch(url, opts).then(res => {
 			return res.json();
@@ -758,10 +1166,10 @@ describe('node-fetch', () => {
 	});
 
 	it('should allow POST request with buffer body', function() {
-		url = `${base}inspect`;
-		opts = {
-			method: 'POST'
-			, body: new Buffer('a=1', 'utf-8')
+		const url = `${base}inspect`;
+		const opts = {
+			method: 'POST',
+			body: Buffer.from('a=1', 'utf-8')
 		};
 		return fetch(url, opts).then(res => {
 			return res.json();
@@ -774,11 +1182,114 @@ describe('node-fetch', () => {
 		});
 	});
 
+	it('should allow POST request with ArrayBuffer body', function() {
+		const url = `${base}inspect`;
+		const opts = {
+			method: 'POST',
+			body: stringToArrayBuffer('Hello, world!\n')
+		};
+		return fetch(url, opts).then(res => res.json()).then(res => {
+			expect(res.method).to.equal('POST');
+			expect(res.body).to.equal('Hello, world!\n');
+			expect(res.headers['transfer-encoding']).to.be.undefined;
+			expect(res.headers['content-type']).to.be.undefined;
+			expect(res.headers['content-length']).to.equal('14');
+		});
+	});
+
+	it('should allow POST request with ArrayBuffer body from a VM context', function() {
+		// TODO: Node.js v4 doesn't support ArrayBuffer from other contexts, so we skip this test, drop this check once Node.js v4 support is not needed
+		try {
+			Buffer.from(new VMArrayBuffer());
+		} catch (err) {
+			this.skip();
+		}
+		const url = `${base}inspect`;
+		const opts = {
+			method: 'POST',
+			body: new VMUint8Array(Buffer.from('Hello, world!\n')).buffer
+		};
+		return fetch(url, opts).then(res => res.json()).then(res => {
+			expect(res.method).to.equal('POST');
+			expect(res.body).to.equal('Hello, world!\n');
+			expect(res.headers['transfer-encoding']).to.be.undefined;
+			expect(res.headers['content-type']).to.be.undefined;
+			expect(res.headers['content-length']).to.equal('14');
+		});
+	});
+
+	it('should allow POST request with ArrayBufferView (Uint8Array) body', function() {
+		const url = `${base}inspect`;
+		const opts = {
+			method: 'POST',
+			body: new Uint8Array(stringToArrayBuffer('Hello, world!\n'))
+		};
+		return fetch(url, opts).then(res => res.json()).then(res => {
+			expect(res.method).to.equal('POST');
+			expect(res.body).to.equal('Hello, world!\n');
+			expect(res.headers['transfer-encoding']).to.be.undefined;
+			expect(res.headers['content-type']).to.be.undefined;
+			expect(res.headers['content-length']).to.equal('14');
+		});
+	});
+
+	it('should allow POST request with ArrayBufferView (DataView) body', function() {
+		const url = `${base}inspect`;
+		const opts = {
+			method: 'POST',
+			body: new DataView(stringToArrayBuffer('Hello, world!\n'))
+		};
+		return fetch(url, opts).then(res => res.json()).then(res => {
+			expect(res.method).to.equal('POST');
+			expect(res.body).to.equal('Hello, world!\n');
+			expect(res.headers['transfer-encoding']).to.be.undefined;
+			expect(res.headers['content-type']).to.be.undefined;
+			expect(res.headers['content-length']).to.equal('14');
+		});
+	});
+
+	it('should allow POST request with ArrayBufferView (Uint8Array) body from a VM context', function() {
+		// TODO: Node.js v4 doesn't support ArrayBufferView from other contexts, so we skip this test, drop this check once Node.js v4 support is not needed
+		try {
+			Buffer.from(new VMArrayBuffer());
+		} catch (err) {
+			this.skip();
+		}
+		const url = `${base}inspect`;
+		const opts = {
+			method: 'POST',
+			body: new VMUint8Array(Buffer.from('Hello, world!\n'))
+		};
+		return fetch(url, opts).then(res => res.json()).then(res => {
+			expect(res.method).to.equal('POST');
+			expect(res.body).to.equal('Hello, world!\n');
+			expect(res.headers['transfer-encoding']).to.be.undefined;
+			expect(res.headers['content-type']).to.be.undefined;
+			expect(res.headers['content-length']).to.equal('14');
+		});
+	});
+
+	// TODO: Node.js v4 doesn't support necessary Buffer API, so we skip this test, drop this check once Node.js v4 support is not needed
+	(Buffer.from.length === 3 ? it : it.skip)('should allow POST request with ArrayBufferView (Uint8Array, offset, length) body', function() {
+		const url = `${base}inspect`;
+		const opts = {
+			method: 'POST',
+			body: new Uint8Array(stringToArrayBuffer('Hello, world!\n'), 7, 6)
+		};
+		return fetch(url, opts).then(res => res.json()).then(res => {
+			expect(res.method).to.equal('POST');
+			expect(res.body).to.equal('world!');
+			expect(res.headers['transfer-encoding']).to.be.undefined;
+			expect(res.headers['content-type']).to.be.undefined;
+			expect(res.headers['content-length']).to.equal('6');
+		});
+	});
+
 	it('should allow POST request with blob body without type', function() {
-		url = `${base}inspect`;
-		opts = {
-			method: 'POST'
-			, body: new Blob(['a=1'])
+		const url = `${base}inspect`;
+		const opts = {
+			method: 'POST',
+			body: new Blob(['a=1'])
 		};
 		return fetch(url, opts).then(res => {
 			return res.json();
@@ -792,8 +1303,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should allow POST request with blob body with type', function() {
-		url = `${base}inspect`;
-		opts = {
+		const url = `${base}inspect`;
+		const opts = {
 			method: 'POST',
 			body: new Blob(['a=1'], {
 				type: 'text/plain;charset=UTF-8'
@@ -814,10 +1325,10 @@ describe('node-fetch', () => {
 		let body = resumer().queue('a=1').end();
 		body = body.pipe(new stream.PassThrough());
 
-		url = `${base}inspect`;
-		opts = {
-			method: 'POST'
-			, body
+		const url = `${base}inspect`;
+		const opts = {
+			method: 'POST',
+			body
 		};
 		return fetch(url, opts).then(res => {
 			return res.json();
@@ -834,10 +1345,10 @@ describe('node-fetch', () => {
 		const form = new FormData();
 		form.append('a','1');
 
-		url = `${base}multipart`;
-		opts = {
-			method: 'POST'
-			, body: form
+		const url = `${base}multipart`;
+		const opts = {
+			method: 'POST',
+			body: form
 		};
 		return fetch(url, opts).then(res => {
 			return res.json();
@@ -851,12 +1362,12 @@ describe('node-fetch', () => {
 
 	it('should allow POST request with form-data using stream as body', function() {
 		const form = new FormData();
-		form.append('my_field', fs.createReadStream('test/dummy.txt'));
+		form.append('my_field', fs.createReadStream(path.join(__dirname, 'dummy.txt')));
 
-		url = `${base}multipart`;
-		opts = {
-			method: 'POST'
-			, body: form
+		const url = `${base}multipart`;
+		const opts = {
+			method: 'POST',
+			body: form
 		};
 
 		return fetch(url, opts).then(res => {
@@ -876,11 +1387,11 @@ describe('node-fetch', () => {
 		const headers = form.getHeaders();
 		headers['b'] = '2';
 
-		url = `${base}multipart`;
-		opts = {
-			method: 'POST'
-			, body: form
-			, headers
+		const url = `${base}multipart`;
+		const opts = {
+			method: 'POST',
+			body: form,
+			headers
 		};
 		return fetch(url, opts).then(res => {
 			return res.json();
@@ -894,11 +1405,11 @@ describe('node-fetch', () => {
 	});
 
 	it('should allow POST request with object body', function() {
-		url = `${base}inspect`;
+		const url = `${base}inspect`;
 		// note that fetch simply calls tostring on an object
-		opts = {
-			method: 'POST'
-			, body: { a:1 }
+		const opts = {
+			method: 'POST',
+			body: { a: 1 }
 		};
 		return fetch(url, opts).then(res => {
 			return res.json();
@@ -910,10 +1421,104 @@ describe('node-fetch', () => {
 		});
 	});
 
+	const itUSP = typeof URLSearchParams === 'function' ? it : it.skip;
+
+	itUSP('constructing a Response with URLSearchParams as body should have a Content-Type', function() {
+		const params = new URLSearchParams();
+		const res = new Response(params);
+		res.headers.get('Content-Type');
+		expect(res.headers.get('Content-Type')).to.equal('application/x-www-form-urlencoded;charset=UTF-8');
+	});
+
+	itUSP('constructing a Request with URLSearchParams as body should have a Content-Type', function() {
+		const params = new URLSearchParams();
+		const req = new Request(base, { method: 'POST', body: params });
+		expect(req.headers.get('Content-Type')).to.equal('application/x-www-form-urlencoded;charset=UTF-8');
+	});
+
+	itUSP('Reading a body with URLSearchParams should echo back the result', function() {
+		const params = new URLSearchParams();
+		params.append('a','1');
+		return new Response(params).text().then(text => {
+			expect(text).to.equal('a=1');
+		});
+	});
+
+	// Body should been cloned...
+	itUSP('constructing a Request/Response with URLSearchParams and mutating it should not affected body', function() {
+		const params = new URLSearchParams();
+		const req = new Request(`${base}inspect`, { method: 'POST', body: params })
+		params.append('a','1')
+		return req.text().then(text => {
+			expect(text).to.equal('');
+		});
+	});
+
+	itUSP('should allow POST request with URLSearchParams as body', function() {
+		const params = new URLSearchParams();
+		params.append('a','1');
+
+		const url = `${base}inspect`;
+		const opts = {
+			method: 'POST',
+			body: params,
+		};
+		return fetch(url, opts).then(res => {
+			return res.json();
+		}).then(res => {
+			expect(res.method).to.equal('POST');
+			expect(res.headers['content-type']).to.equal('application/x-www-form-urlencoded;charset=UTF-8');
+			expect(res.headers['content-length']).to.equal('3');
+			expect(res.body).to.equal('a=1');
+		});
+	});
+
+	itUSP('should still recognize URLSearchParams when extended', function() {
+		class CustomSearchParams extends URLSearchParams {}
+		const params = new CustomSearchParams();
+		params.append('a','1');
+
+		const url = `${base}inspect`;
+		const opts = {
+			method: 'POST',
+			body: params,
+		};
+		return fetch(url, opts).then(res => {
+			return res.json();
+		}).then(res => {
+			expect(res.method).to.equal('POST');
+			expect(res.headers['content-type']).to.equal('application/x-www-form-urlencoded;charset=UTF-8');
+			expect(res.headers['content-length']).to.equal('3');
+			expect(res.body).to.equal('a=1');
+		});
+	});
+
+	/* for 100% code coverage, checks for duck-typing-only detection
+	 * where both constructor.name and brand tests fail */
+	it('should still recognize URLSearchParams when extended from polyfill', function() {
+		class CustomPolyfilledSearchParams extends URLSearchParams_Polyfill {}
+		const params = new CustomPolyfilledSearchParams();
+		params.append('a','1');
+
+		const url = `${base}inspect`;
+		const opts = {
+			method: 'POST',
+			body: params,
+		};
+		return fetch(url, opts).then(res => {
+			return res.json();
+		}).then(res => {
+			expect(res.method).to.equal('POST');
+			expect(res.headers['content-type']).to.equal('application/x-www-form-urlencoded;charset=UTF-8');
+			expect(res.headers['content-length']).to.equal('3');
+			expect(res.body).to.equal('a=1');
+		});
+	});
+
 	it('should overwrite Content-Length if possible', function() {
-		url = `${base}inspect`;
+		const url = `${base}inspect`;
 		// note that fetch simply calls tostring on an object
-		opts = {
+		const opts = {
 			method: 'POST',
 			headers: {
 				'Content-Length': '1000'
@@ -932,10 +1537,10 @@ describe('node-fetch', () => {
 	});
 
 	it('should allow PUT request', function() {
-		url = `${base}inspect`;
-		opts = {
-			method: 'PUT'
-			, body: 'a=1'
+		const url = `${base}inspect`;
+		const opts = {
+			method: 'PUT',
+			body: 'a=1'
 		};
 		return fetch(url, opts).then(res => {
 			return res.json();
@@ -946,8 +1551,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should allow DELETE request', function() {
-		url = `${base}inspect`;
-		opts = {
+		const url = `${base}inspect`;
+		const opts = {
 			method: 'DELETE'
 		};
 		return fetch(url, opts).then(res => {
@@ -958,10 +1563,10 @@ describe('node-fetch', () => {
 	});
 
 	it('should allow DELETE request with string body', function() {
-		url = `${base}inspect`;
-		opts = {
-			method: 'DELETE'
-			, body: 'a=1'
+		const url = `${base}inspect`;
+		const opts = {
+			method: 'DELETE',
+			body: 'a=1'
 		};
 		return fetch(url, opts).then(res => {
 			return res.json();
@@ -974,10 +1579,10 @@ describe('node-fetch', () => {
 	});
 
 	it('should allow PATCH request', function() {
-		url = `${base}inspect`;
-		opts = {
-			method: 'PATCH'
-			, body: 'a=1'
+		const url = `${base}inspect`;
+		const opts = {
+			method: 'PATCH',
+			body: 'a=1'
 		};
 		return fetch(url, opts).then(res => {
 			return res.json();
@@ -988,8 +1593,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should allow HEAD request', function() {
-		url = `${base}hello`;
-		opts = {
+		const url = `${base}hello`;
+		const opts = {
 			method: 'HEAD'
 		};
 		return fetch(url, opts).then(res => {
@@ -1004,8 +1609,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should allow HEAD request with content-encoding header', function() {
-		url = `${base}error/404`;
-		opts = {
+		const url = `${base}error/404`;
+		const opts = {
 			method: 'HEAD'
 		};
 		return fetch(url, opts).then(res => {
@@ -1018,8 +1623,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should allow OPTIONS request', function() {
-		url = `${base}options`;
-		opts = {
+		const url = `${base}options`;
+		const opts = {
 			method: 'OPTIONS'
 		};
 		return fetch(url, opts).then(res => {
@@ -1031,7 +1636,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should reject decoding body twice', function() {
-		url = `${base}plain`;
+		const url = `${base}plain`;
 		return fetch(url).then(res => {
 			expect(res.headers.get('content-type')).to.equal('text/plain');
 			return res.text().then(result => {
@@ -1042,8 +1647,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should support maximum response size, multiple chunk', function() {
-		url = `${base}size/chunk`;
-		opts = {
+		const url = `${base}size/chunk`;
+		const opts = {
 			size: 5
 		};
 		return fetch(url, opts).then(res => {
@@ -1056,8 +1661,8 @@ describe('node-fetch', () => {
 	});
 
 	it('should support maximum response size, single chunk', function() {
-		url = `${base}size/long`;
-		opts = {
+		const url = `${base}size/long`;
+		const opts = {
 			size: 5
 		};
 		return fetch(url, opts).then(res => {
@@ -1069,111 +1674,8 @@ describe('node-fetch', () => {
 		});
 	});
 
-	it('should only use UTF-8 decoding with text()', function() {
-		url = `${base}encoding/euc-jp`;
-		return fetch(url).then(res => {
-			expect(res.status).to.equal(200);
-			return res.text().then(result => {
-				expect(result).to.equal('<?xml version="1.0" encoding="EUC-JP"?><title>\ufffd\ufffd\ufffd\u0738\ufffd</title>');
-			});
-		});
-	});
-
-	it('should support encoding decode, xml dtd detect', function() {
-		url = `${base}encoding/euc-jp`;
-		return fetch(url).then(res => {
-			expect(res.status).to.equal(200);
-			return res.textConverted().then(result => {
-				expect(result).to.equal('<?xml version="1.0" encoding="EUC-JP"?><title>日本語</title>');
-			});
-		});
-	});
-
-	it('should support encoding decode, content-type detect', function() {
-		url = `${base}encoding/shift-jis`;
-		return fetch(url).then(res => {
-			expect(res.status).to.equal(200);
-			return res.textConverted().then(result => {
-				expect(result).to.equal('<div>日本語</div>');
-			});
-		});
-	});
-
-	it('should support encoding decode, html5 detect', function() {
-		url = `${base}encoding/gbk`;
-		return fetch(url).then(res => {
-			expect(res.status).to.equal(200);
-			return res.textConverted().then(result => {
-				expect(result).to.equal('<meta charset="gbk"><div>中文</div>');
-			});
-		});
-	});
-
-	it('should support encoding decode, html4 detect', function() {
-		url = `${base}encoding/gb2312`;
-		return fetch(url).then(res => {
-			expect(res.status).to.equal(200);
-			return res.textConverted().then(result => {
-				expect(result).to.equal('<meta http-equiv="Content-Type" content="text/html; charset=gb2312"><div>中文</div>');
-			});
-		});
-	});
-
-	it('should default to utf8 encoding', function() {
-		url = `${base}encoding/utf8`;
-		return fetch(url).then(res => {
-			expect(res.status).to.equal(200);
-			expect(res.headers.get('content-type')).to.be.null;
-			return res.textConverted().then(result => {
-				expect(result).to.equal('中文');
-			});
-		});
-	});
-
-	it('should support uncommon content-type order, charset in front', function() {
-		url = `${base}encoding/order1`;
-		return fetch(url).then(res => {
-			expect(res.status).to.equal(200);
-			return res.textConverted().then(result => {
-				expect(result).to.equal('中文');
-			});
-		});
-	});
-
-	it('should support uncommon content-type order, end with qs', function() {
-		url = `${base}encoding/order2`;
-		return fetch(url).then(res => {
-			expect(res.status).to.equal(200);
-			return res.textConverted().then(result => {
-				expect(result).to.equal('中文');
-			});
-		});
-	});
-
-	it('should support chunked encoding, html4 detect', function() {
-		url = `${base}encoding/chunked`;
-		return fetch(url).then(res => {
-			expect(res.status).to.equal(200);
-			const padding = 'a'.repeat(10);
-			return res.textConverted().then(result => {
-				expect(result).to.equal(`${padding}<meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS" /><div>日本語</div>`);
-			});
-		});
-	});
-
-	it('should only do encoding detection up to 1024 bytes', function() {
-		url = `${base}encoding/invalid`;
-		return fetch(url).then(res => {
-			expect(res.status).to.equal(200);
-			const padding = 'a'.repeat(1200);
-			return res.textConverted().then(result => {
-				expect(result).to.not.equal(`${padding}中文`);
-			});
-		});
-	});
-
 	it('should allow piping response body as stream', function() {
-		url = `${base}hello`;
+		const url = `${base}hello`;
 		return fetch(url).then(res => {
 			expect(res.body).to.be.an.instanceof(stream.Transform);
 			return streamToPromise(res.body, chunk => {
@@ -1186,7 +1688,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should allow cloning a response, and use both as stream', function() {
-		url = `${base}hello`;
+		const url = `${base}hello`;
 		return fetch(url).then(res => {
 			const r1 = res.clone();
 			expect(res.body).to.be.an.instanceof(stream.Transform);
@@ -1206,7 +1708,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should allow cloning a json response and log it as text response', function() {
-		url = `${base}json`;
+		const url = `${base}json`;
 		return fetch(url).then(res => {
 			const r1 = res.clone();
 			return Promise.all([res.json(), r1.text()]).then(results => {
@@ -1217,7 +1719,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should allow cloning a json response, and then log it as text response', function() {
-		url = `${base}json`;
+		const url = `${base}json`;
 		return fetch(url).then(res => {
 			const r1 = res.clone();
 			return res.json().then(result => {
@@ -1230,7 +1732,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should allow cloning a json response, first log as text response, then return json object', function() {
-		url = `${base}json`;
+		const url = `${base}json`;
 		return fetch(url).then(res => {
 			const r1 = res.clone();
 			return r1.text().then(result => {
@@ -1243,7 +1745,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should not allow cloning a response after its been used', function() {
-		url = `${base}hello`;
+		const url = `${base}hello`;
 		return fetch(url).then(res =>
 			res.text().then(result => {
 				expect(() => {
@@ -1254,7 +1756,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should allow get all responses of a header', function() {
-		url = `${base}cookie`;
+		const url = `${base}cookie`;
 		return fetch(url).then(res => {
 			const expected = 'a=1, b=1';
 			expect(res.headers.get('set-cookie')).to.equal(expected);
@@ -1263,7 +1765,7 @@ describe('node-fetch', () => {
 	});
 
 	it('should return all headers using raw()', function() {
-		url = `${base}cookie`;
+		const url = `${base}cookie`;
 		return fetch(url).then(res => {
 			const expected = [
 				'a=1',
@@ -1272,6 +1774,204 @@ describe('node-fetch', () => {
 
 			expect(res.headers.raw()['set-cookie']).to.deep.equal(expected);
 		});
+	});
+
+	it('should allow deleting header', function() {
+		const url = `${base}cookie`;
+		return fetch(url).then(res => {
+			res.headers.delete('set-cookie');
+			expect(res.headers.get('set-cookie')).to.be.null;
+		});
+	});
+
+	it('should send request with connection keep-alive if agent is provided', function() {
+		const url = `${base}inspect`;
+		const opts = {
+			agent: new http.Agent({
+				keepAlive: true
+			})
+		};
+		return fetch(url, opts).then(res => {
+			return res.json();
+		}).then(res => {
+			expect(res.headers['connection']).to.equal('keep-alive');
+		});
+	});
+
+	it('should support fetch with Request instance', function() {
+		const url = `${base}hello`;
+		const req = new Request(url);
+		return fetch(req).then(res => {
+			expect(res.url).to.equal(url);
+			expect(res.ok).to.be.true;
+			expect(res.status).to.equal(200);
+		});
+	});
+
+	it('should support fetch with Node.js URL object', function() {
+		const url = `${base}hello`;
+		const urlObj = parseURL(url);
+		const req = new Request(urlObj);
+		return fetch(req).then(res => {
+			expect(res.url).to.equal(url);
+			expect(res.ok).to.be.true;
+			expect(res.status).to.equal(200);
+		});
+	});
+
+	it('should support fetch with WHATWG URL object', function() {
+		const url = `${base}hello`;
+		const urlObj = new URL(url);
+		const req = new Request(urlObj);
+		return fetch(req).then(res => {
+			expect(res.url).to.equal(url);
+			expect(res.ok).to.be.true;
+			expect(res.status).to.equal(200);
+		});
+	});
+
+	it('should support blob round-trip', function() {
+		const url = `${base}hello`;
+
+		let length, type;
+
+		return fetch(url).then(res => res.blob()).then(blob => {
+			const url = `${base}inspect`;
+			length = blob.size;
+			type = blob.type;
+			return fetch(url, {
+				method: 'POST',
+				body: blob
+			});
+		}).then(res => res.json()).then((content) => {
+			expect(content.body).to.equal('world');
+			expect(content.headers['content-type']).to.equal(type);
+			expect(content.headers['content-length']).to.equal(String(length));
+		});
+	});
+
+	it('should support overwrite Request instance', function() {
+		const url = `${base}inspect`;
+		const req = new Request(url, {
+			method: 'POST',
+			headers: {
+				a: '1'
+			}
+		});
+		return fetch(req, {
+			method: 'GET',
+			headers: {
+				a: '2'
+			}
+		}).then(res => {
+			return res.json();
+		}).then(body => {
+			expect(body.method).to.equal('GET');
+			expect(body.headers.a).to.equal('2');
+		});
+	});
+
+	it('should support arrayBuffer(), blob(), text(), json() and buffer() method in Body constructor', function() {
+		const body = new Body('a=1');
+		expect(body).to.have.property('arrayBuffer');
+		expect(body).to.have.property('blob');
+		expect(body).to.have.property('text');
+		expect(body).to.have.property('json');
+		expect(body).to.have.property('buffer');
+	});
+
+	it('should create custom FetchError', function funcName() {
+		const systemError = new Error('system');
+		systemError.code = 'ESOMEERROR';
+
+		const err = new FetchError('test message', 'test-error', systemError);
+		expect(err).to.be.an.instanceof(Error);
+		expect(err).to.be.an.instanceof(FetchError);
+		expect(err.name).to.equal('FetchError');
+		expect(err.message).to.equal('test message');
+		expect(err.type).to.equal('test-error');
+		expect(err.code).to.equal('ESOMEERROR');
+		expect(err.errno).to.equal('ESOMEERROR');
+		expect(err.stack).to.include('funcName')
+			.and.to.startWith(`${err.name}: ${err.message}`);
+	});
+
+	it('should support https request', function() {
+		this.timeout(5000);
+		const url = 'https://github.com/';
+		const opts = {
+			method: 'HEAD'
+		};
+		return fetch(url, opts).then(res => {
+			expect(res.status).to.equal(200);
+			expect(res.ok).to.be.true;
+		});
+	});
+
+	// issue #414
+	it('should reject if attempt to accumulate body stream throws', function () {
+		let body = resumer().queue('a=1').end();
+		body = body.pipe(new stream.PassThrough());
+		const res = new Response(body);
+		const bufferConcat = Buffer.concat;
+		const restoreBufferConcat = () => Buffer.concat = bufferConcat;
+		Buffer.concat = () => { throw new Error('embedded error'); };
+
+		const textPromise = res.text();
+		// Ensure that `Buffer.concat` is always restored:
+		textPromise.then(restoreBufferConcat, restoreBufferConcat);
+
+		return expect(textPromise).to.eventually.be.rejected
+			.and.be.an.instanceOf(FetchError)
+			.and.include({ type: 'system' })
+			.and.have.property('message').that.includes('Could not create Buffer')
+			.and.that.includes('embedded error');
+	});
+
+	it("supports supplying a lookup function to the agent", function() {
+		const url = `${base}redirect/301`;
+		let called = 0;
+		function lookupSpy(hostname, options, callback) {
+			called++;
+			return lookup(hostname, options, callback);
+		}
+		const agent = http.Agent({ lookup: lookupSpy });
+		return fetch(url, { agent }).then(() => {
+			expect(called).to.equal(2);
+		});
+	});
+
+	it("supports supplying a famliy option to the agent", function() {
+		const url = `${base}redirect/301`;
+		const families = [];
+		const family = Symbol('family');
+		function lookupSpy(hostname, options, callback) {
+			families.push(options.family)
+			return lookup(hostname, {}, callback);
+		}
+		const agent = http.Agent({ lookup: lookupSpy, family });
+		return fetch(url, { agent }).then(() => {
+			expect(families).to.have.length(2);
+			expect(families[0]).to.equal(family);
+			expect(families[1]).to.equal(family);
+		});
+	});
+});
+
+describe('Headers', function () {
+	it('should have attributes conforming to Web IDL', function () {
+		const headers = new Headers();
+		expect(Object.getOwnPropertyNames(headers)).to.be.empty;
+		const enumerableProperties = [];
+		for (const property in headers) {
+			enumerableProperties.push(property);
+		}
+		for (const toCheck of [
+			'append', 'delete', 'entries', 'forEach', 'get', 'has', 'keys', 'set',
+			'values'
+		]) {
+			expect(enumerableProperties).to.contain(toCheck);
+		}
 	});
 
 	it('should allow iterating through all headers with forEach', function() {
@@ -1289,9 +1989,9 @@ describe('node-fetch', () => {
 		});
 
 		expect(result).to.deep.equal([
-			["a", "1"]
-			, ["b", "2, 3"]
-			, ["c", "4"]
+			["a", "1"],
+			["b", "2, 3"],
+			["c", "4"]
 		]);
 	});
 
@@ -1355,14 +2055,6 @@ describe('node-fetch', () => {
 			.and.to.iterate.over(['1', '2, 3', '4']);
 	});
 
-	it('should allow deleting header', function() {
-		url = `${base}cookie`;
-		return fetch(url).then(res => {
-			res.headers.delete('set-cookie');
-			expect(res.headers.get('set-cookie')).to.be.null;
-		});
-	});
-
 	it('should reject illegal header', function() {
 		const headers = new Headers();
 		expect(() => new Headers({ 'He y': 'ok' })).to.throw(TypeError);
@@ -1376,20 +2068,6 @@ describe('node-fetch', () => {
 
 		// 'o k' is valid value but invalid name
 		new Headers({ 'He-y': 'o k' });
-	});
-
-	it('should send request with connection keep-alive if agent is provided', function() {
-		url = `${base}inspect`;
-		opts = {
-			agent: new http.Agent({
-				keepAlive: true
-			})
-		};
-		return fetch(url, opts).then(res => {
-			return res.json();
-		}).then(res => {
-			expect(res.headers['connection']).to.equal('keep-alive');
-		});
 	});
 
 	it('should ignore unsupported attributes while reading headers', function() {
@@ -1411,7 +2089,7 @@ describe('node-fetch', () => {
 		res.j = NaN;
 		res.k = true;
 		res.l = false;
-		res.m = new Buffer('test');
+		res.m = Buffer.from('test');
 
 		const h1 = new Headers(res);
 		h1.set('n', [1, 2]);
@@ -1497,117 +2175,32 @@ describe('node-fetch', () => {
 		expect(() => new Headers('b2')).to.throw(TypeError);
 		expect(() => new Headers({ [Symbol.iterator]: 42 })).to.throw(TypeError);
 	});
+});
 
-	it('should support fetch with Request instance', function() {
-		url = `${base}hello`;
-		const req = new Request(url);
-		return fetch(req).then(res => {
-			expect(res.url).to.equal(url);
-			expect(res.ok).to.be.true;
-			expect(res.status).to.equal(200);
-		});
+describe('Response', function () {
+	it('should have attributes conforming to Web IDL', function () {
+		const res = new Response();
+		const enumerableProperties = [];
+		for (const property in res) {
+			enumerableProperties.push(property);
+		}
+		for (const toCheck of [
+			'body', 'bodyUsed', 'arrayBuffer', 'blob', 'json', 'text',
+			'url', 'status', 'ok', 'statusText', 'headers', 'clone'
+		]) {
+			expect(enumerableProperties).to.contain(toCheck);
+		}
+		for (const toCheck of [
+			'body', 'bodyUsed', 'url', 'status', 'ok', 'statusText',
+			'headers'
+		]) {
+			expect(() => {
+				res[toCheck] = 'abc';
+			}).to.throw();
+		}
 	});
 
-	it('should support fetch with Node.js URL object', function() {
-		url = `${base}hello`;
-		const urlObj = parseURL(url);
-		const req = new Request(urlObj);
-		return fetch(req).then(res => {
-			expect(res.url).to.equal(url);
-			expect(res.ok).to.be.true;
-			expect(res.status).to.equal(200);
-		});
-	});
-
-	it('should support fetch with WHATWG URL object', function() {
-		url = `${base}hello`;
-		const urlObj = new URL(url);
-		const req = new Request(urlObj);
-		return fetch(req).then(res => {
-			expect(res.url).to.equal(url);
-			expect(res.ok).to.be.true;
-			expect(res.status).to.equal(200);
-		});
-	});
-
-	it('should support blob round-trip', function() {
-		url = `${base}hello`;
-
-		let length, type;
-
-		return fetch(url).then(res => res.blob()).then(blob => {
-			url = `${base}inspect`;
-			length = blob.size;
-			type = blob.type;
-			return fetch(url, {
-				method: 'POST',
-				body: blob
-			});
-		}).then(res => res.json()).then(result => {
-			expect(result.body).to.equal('world');
-			expect(result.headers['content-type']).to.equal(type);
-			expect(result.headers['content-length']).to.equal(String(length));
-		});
-	});
-
-	it('should support wrapping Request instance', function() {
-		url = `${base}hello`;
-
-		const form = new FormData();
-		form.append('a', '1');
-
-		const r1 = new Request(url, {
-			method: 'POST'
-			, follow: 1
-			, body: form
-		});
-		const r2 = new Request(r1, {
-			follow: 2
-		});
-
-		expect(r2.url).to.equal(url);
-		expect(r2.method).to.equal('POST');
-		// note that we didn't clone the body
-		expect(r2.body).to.equal(form);
-		expect(r1.follow).to.equal(1);
-		expect(r2.follow).to.equal(2);
-		expect(r1.counter).to.equal(0);
-		expect(r2.counter).to.equal(0);
-	});
-
-	it('should support overwrite Request instance', function() {
-		url = `${base}inspect`;
-		const req = new Request(url, {
-			method: 'POST'
-			, headers: {
-				a: '1'
-			}
-		});
-		return fetch(req, {
-			method: 'GET'
-			, headers: {
-				a: '2'
-			}
-		}).then(res => {
-			return res.json();
-		}).then(body => {
-			expect(body.method).to.equal('GET');
-			expect(body.headers.a).to.equal('2');
-		});
-	});
-
-	it('should throw error with GET/HEAD requests with body', function() {
-		expect(() => new Request('.', { body: '' }))
-			.to.throw(TypeError);
-		expect(() => new Request('.', { body: 'a' }))
-			.to.throw(TypeError);
-		expect(() => new Request('.', { body: '', method: 'HEAD' }))
-			.to.throw(TypeError);
-		expect(() => new Request('.', { body: 'a', method: 'HEAD' }))
-			.to.throw(TypeError);
-	});
-
-	it('should support empty options in Response constructor', function() {
+	it('should support empty options', function() {
 		let body = resumer().queue('a=1').end();
 		body = body.pipe(new stream.PassThrough());
 		const res = new Response(body);
@@ -1616,7 +2209,7 @@ describe('node-fetch', () => {
 		});
 	});
 
-	it('should support parsing headers in Response constructor', function() {
+	it('should support parsing headers', function() {
 		const res = new Response(null, {
 			headers: {
 				a: '1'
@@ -1625,28 +2218,28 @@ describe('node-fetch', () => {
 		expect(res.headers.get('a')).to.equal('1');
 	});
 
-	it('should support text() method in Response constructor', function() {
+	it('should support text() method', function() {
 		const res = new Response('a=1');
 		return res.text().then(result => {
 			expect(result).to.equal('a=1');
 		});
 	});
 
-	it('should support json() method in Response constructor', function() {
+	it('should support json() method', function() {
 		const res = new Response('{"a":1}');
 		return res.json().then(result => {
 			expect(result.a).to.equal(1);
 		});
 	});
 
-	it('should support buffer() method in Response constructor', function() {
+	it('should support buffer() method', function() {
 		const res = new Response('a=1');
 		return res.buffer().then(result => {
 			expect(result.toString()).to.equal('a=1');
 		});
 	});
 
-	it('should support blob() method in Response constructor', function() {
+	it('should support blob() method', function() {
 		const res = new Response('a=1', {
 			method: 'POST',
 			headers: {
@@ -1655,27 +2248,21 @@ describe('node-fetch', () => {
 		});
 		return res.blob().then(function(result) {
 			expect(result).to.be.an.instanceOf(Blob);
-			expect(result.isClosed).to.be.false;
 			expect(result.size).to.equal(3);
-			expect(result.type).to.equal('text/plain');
-
-			result.close();
-			expect(result.isClosed).to.be.true;
-			expect(result.size).to.equal(0);
 			expect(result.type).to.equal('text/plain');
 		});
 	});
 
-	it('should support clone() method in Response constructor', function() {
+	it('should support clone() method', function() {
 		let body = resumer().queue('a=1').end();
 		body = body.pipe(new stream.PassThrough());
 		const res = new Response(body, {
 			headers: {
 				a: '1'
-			}
-			, url: base
-			, status: 346
-			, statusText: 'production'
+			},
+			url: base,
+			status: 346,
+			statusText: 'production'
 		});
 		const cl = res.clone();
 		expect(cl.headers.get('a')).to.equal('1');
@@ -1690,7 +2277,7 @@ describe('node-fetch', () => {
 		});
 	});
 
-	it('should support stream as body in Response constructor', function() {
+	it('should support stream as body', function() {
 		let body = resumer().queue('a=1').end();
 		body = body.pipe(new stream.PassThrough());
 		const res = new Response(body);
@@ -1699,22 +2286,43 @@ describe('node-fetch', () => {
 		});
 	});
 
-	it('should support string as body in Response constructor', function() {
+	it('should support string as body', function() {
 		const res = new Response('a=1');
 		return res.text().then(result => {
 			expect(result).to.equal('a=1');
 		});
 	});
 
-	it('should support buffer as body in Response constructor', function() {
-		const res = new Response(new Buffer('a=1'));
+	it('should support buffer as body', function() {
+		const res = new Response(Buffer.from('a=1'));
 		return res.text().then(result => {
 			expect(result).to.equal('a=1');
 		});
 	});
 
-	it('should support blob as body in Response constructor', function() {
+	it('should support ArrayBuffer as body', function() {
+		const res = new Response(stringToArrayBuffer('a=1'));
+		return res.text().then(result => {
+			expect(result).to.equal('a=1');
+		});
+	});
+
+	it('should support blob as body', function() {
 		const res = new Response(new Blob(['a=1']));
+		return res.text().then(result => {
+			expect(result).to.equal('a=1');
+		});
+	});
+
+	it('should support Uint8Array as body', function() {
+		const res = new Response(new Uint8Array(stringToArrayBuffer('a=1')));
+		return res.text().then(result => {
+			expect(result).to.equal('a=1');
+		});
+	});
+
+	it('should support DataView as body', function() {
+		const res = new Response(new DataView(stringToArrayBuffer('a=1')));
 		return res.text().then(result => {
 			expect(result).to.equal('a=1');
 		});
@@ -1723,23 +2331,114 @@ describe('node-fetch', () => {
 	it('should default to null as body', function() {
 		const res = new Response();
 		expect(res.body).to.equal(null);
-		const req = new Request('.');
-		expect(req.body).to.equal(null);
 
-		const cb = result => expect(result).to.equal('');
-		return Promise.all([
-			res.text().then(cb),
-			req.text().then(cb)
-		]);
+		return res.text().then(result => expect(result).to.equal(''));
 	});
 
 	it('should default to 200 as status code', function() {
 		const res = new Response(null);
 		expect(res.status).to.equal(200);
 	});
+});
 
-	it('should support parsing headers in Request constructor', function() {
-		url = base;
+describe('Request', function () {
+	it('should have attributes conforming to Web IDL', function () {
+		const req = new Request('https://github.com/');
+		const enumerableProperties = [];
+		for (const property in req) {
+			enumerableProperties.push(property);
+		}
+		for (const toCheck of [
+			'body', 'bodyUsed', 'arrayBuffer', 'blob', 'json', 'text',
+			'method', 'url', 'headers', 'redirect', 'clone', 'signal',
+		]) {
+			expect(enumerableProperties).to.contain(toCheck);
+		}
+		for (const toCheck of [
+			'body', 'bodyUsed', 'method', 'url', 'headers', 'redirect', 'signal',
+		]) {
+			expect(() => {
+				req[toCheck] = 'abc';
+			}).to.throw();
+		}
+	});
+
+	it('should support wrapping Request instance', function() {
+		const url = `${base}hello`;
+
+		const form = new FormData();
+		form.append('a', '1');
+		const signal = new AbortController().signal;
+
+		const r1 = new Request(url, {
+			method: 'POST',
+			follow: 1,
+			body: form,
+			signal,
+		});
+		const r2 = new Request(r1, {
+			follow: 2
+		});
+
+		expect(r2.url).to.equal(url);
+		expect(r2.method).to.equal('POST');
+		expect(r2.signal).to.equal(signal);
+		// note that we didn't clone the body
+		expect(r2.body).to.equal(form);
+		expect(r1.follow).to.equal(1);
+		expect(r2.follow).to.equal(2);
+		expect(r1.counter).to.equal(0);
+		expect(r2.counter).to.equal(0);
+	});
+
+	it('should override signal on derived Request instances', function() {
+		const parentAbortController = new AbortController();
+		const derivedAbortController = new AbortController();
+		const parentRequest = new Request(`test`, {
+			signal: parentAbortController.signal
+		});
+		const derivedRequest = new Request(parentRequest, {
+			signal: derivedAbortController.signal
+		});
+		expect(parentRequest.signal).to.equal(parentAbortController.signal);
+		expect(derivedRequest.signal).to.equal(derivedAbortController.signal);
+	});
+
+	it('should allow removing signal on derived Request instances', function() {
+		const parentAbortController = new AbortController();
+		const parentRequest = new Request(`test`, {
+			signal: parentAbortController.signal
+		});
+		const derivedRequest = new Request(parentRequest, {
+			signal: null
+		});
+		expect(parentRequest.signal).to.equal(parentAbortController.signal);
+		expect(derivedRequest.signal).to.equal(null);
+	});
+
+	it('should throw error with GET/HEAD requests with body', function() {
+		expect(() => new Request('.', { body: '' }))
+			.to.throw(TypeError);
+		expect(() => new Request('.', { body: 'a' }))
+			.to.throw(TypeError);
+		expect(() => new Request('.', { body: '', method: 'HEAD' }))
+			.to.throw(TypeError);
+		expect(() => new Request('.', { body: 'a', method: 'HEAD' }))
+			.to.throw(TypeError);
+		expect(() => new Request('.', { body: 'a', method: 'get' }))
+			.to.throw(TypeError);
+		expect(() => new Request('.', { body: 'a', method: 'head' }))
+			.to.throw(TypeError);
+	});
+
+	it('should default to null as body', function() {
+		const req = new Request('.');
+		expect(req.body).to.equal(null);
+		return req.text().then(result => expect(result).to.equal(''));
+	});
+
+	it('should support parsing headers', function() {
+		const url = base;
 		const req = new Request(url, {
 			headers: {
 				a: '1'
@@ -1749,22 +2448,25 @@ describe('node-fetch', () => {
 		expect(req.headers.get('a')).to.equal('1');
 	});
 
-	it('should support arrayBuffer() method in Request constructor', function() {
-		url = base;
+	it('should support arrayBuffer() method', function() {
+		const url = base;
 		var req = new Request(url, {
 			method: 'POST',
 			body: 'a=1'
 		});
 		expect(req.url).to.equal(url);
 		return req.arrayBuffer().then(function(result) {
-			expect(result).to.be.an.instanceOf(ArrayBuffer);
+			// nodev4 can't do this test as it doesn't have real arraybuffers
+			if (Buffer !== ArrayBuffer) {
+				expect(result).to.be.an.instanceOf(ArrayBuffer);
+			}
 			const str = String.fromCharCode.apply(null, new Uint8Array(result));
 			expect(str).to.equal('a=1');
 		});
 	});
 
-	it('should support text() method in Request constructor', function() {
-		url = base;
+	it('should support text() method', function() {
+		const url = base;
 		const req = new Request(url, {
 			method: 'POST',
 			body: 'a=1'
@@ -1775,8 +2477,8 @@ describe('node-fetch', () => {
 		});
 	});
 
-	it('should support json() method in Request constructor', function() {
-		url = base;
+	it('should support json() method', function() {
+		const url = base;
 		const req = new Request(url, {
 			method: 'POST',
 			body: '{"a":1}'
@@ -1787,8 +2489,8 @@ describe('node-fetch', () => {
 		});
 	});
 
-	it('should support buffer() method in Request constructor', function() {
-		url = base;
+	it('should support buffer() method', function() {
+		const url = base;
 		const req = new Request(url, {
 			method: 'POST',
 			body: 'a=1'
@@ -1799,47 +2501,43 @@ describe('node-fetch', () => {
 		});
 	});
 
-	it('should support blob() method in Request constructor', function() {
-		url = base;
+	it('should support blob() method', function() {
+		const url = base;
 		var req = new Request(url, {
 			method: 'POST',
-			body: new Buffer('a=1')
+			body: Buffer.from('a=1')
 		});
 		expect(req.url).to.equal(url);
 		return req.blob().then(function(result) {
 			expect(result).to.be.an.instanceOf(Blob);
-			expect(result.isClosed).to.be.false;
 			expect(result.size).to.equal(3);
-			expect(result.type).to.equal('');
-
-			result.close();
-			expect(result.isClosed).to.be.true;
-			expect(result.size).to.equal(0);
 			expect(result.type).to.equal('');
 		});
 	});
 
-	it('should support arbitrary url in Request constructor', function() {
-		url = 'anything';
+	it('should support arbitrary url', function() {
+		const url = 'anything';
 		const req = new Request(url);
 		expect(req.url).to.equal('anything');
 	});
 
-	it('should support clone() method in Request constructor', function() {
-		url = base;
+	it('should support clone() method', function() {
+		const url = base;
 		let body = resumer().queue('a=1').end();
 		body = body.pipe(new stream.PassThrough());
 		const agent = new http.Agent();
+		const signal = new AbortController().signal;
 		const req = new Request(url, {
-			body
-			, method: 'POST'
-			, redirect: 'manual'
-			, headers: {
+			body,
+			method: 'POST',
+			redirect: 'manual',
+			headers: {
 				b: '2'
-			}
-			, follow: 3
-			, compress: false
-			, agent
+			},
+			follow: 3,
+			compress: false,
+			agent,
+			signal,
 		});
 		const cl = req.clone();
 		expect(cl.url).to.equal(url);
@@ -1851,6 +2549,7 @@ describe('node-fetch', () => {
 		expect(cl.method).to.equal('POST');
 		expect(cl.counter).to.equal(0);
 		expect(cl.agent).to.equal(agent);
+		expect(cl.signal).to.equal(signal);
 		// clone body shouldn't be the same body
 		expect(cl.body).to.not.equal(body);
 		return Promise.all([cl.text(), req.text()]).then(results => {
@@ -1859,43 +2558,35 @@ describe('node-fetch', () => {
 		});
 	});
 
-	it('should support arrayBuffer(), blob(), text(), json() and buffer() method in Body constructor', function() {
-		const body = new Body('a=1');
-		expect(body).to.have.property('arrayBuffer');
-		expect(body).to.have.property('blob');
-		expect(body).to.have.property('text');
-		expect(body).to.have.property('json');
-		expect(body).to.have.property('buffer');
-	});
-
-	it('should create custom FetchError', function funcName() {
-		const systemError = new Error('system');
-		systemError.code = 'ESOMEERROR';
-
-		const err = new FetchError('test message', 'test-error', systemError);
-		expect(err).to.be.an.instanceof(Error);
-		expect(err).to.be.an.instanceof(FetchError);
-		expect(err.name).to.equal('FetchError');
-		expect(err.message).to.equal('test message');
-		expect(err.type).to.equal('test-error');
-		expect(err.code).to.equal('ESOMEERROR');
-		expect(err.errno).to.equal('ESOMEERROR');
-		expect(err.stack).to.include('funcName')
-			.and.to.startWith(`${err.name}: ${err.message}`);
-	});
-
-	it('should support https request', function() {
-		this.timeout(5000);
-		url = 'https://github.com/';
-		opts = {
-			method: 'HEAD'
-		};
-		return fetch(url, opts).then(res => {
-			expect(res.status).to.equal(200);
-			expect(res.ok).to.be.true;
+	it('should support ArrayBuffer as body', function() {
+		const req = new Request('', {
+			method: 'POST',
+			body: stringToArrayBuffer('a=1')
+		});
+		return req.text().then(result => {
+			expect(result).to.equal('a=1');
 		});
 	});
 
+	it('should support Uint8Array as body', function() {
+		const req = new Request('', {
+			method: 'POST',
+			body: new Uint8Array(stringToArrayBuffer('a=1'))
+		});
+		return req.text().then(result => {
+			expect(result).to.equal('a=1');
+		});
+	});
+
+	it('should support DataView as body', function() {
+		const req = new Request('', {
+			method: 'POST',
+			body: new DataView(stringToArrayBuffer('a=1'))
+		});
+		return req.text().then(result => {
+			expect(result).to.equal('a=1');
+		});
+	});
 });
 
 function streamToPromise(stream, dataHandler) {
@@ -1909,3 +2600,130 @@ function streamToPromise(stream, dataHandler) {
 		stream.on('error', reject);
 	});
 }
+
+describe('external encoding', () => {
+	const hasEncoding = typeof convert === 'function';
+
+	describe('with optional `encoding`', function() {
+		before(function() {
+			if(!hasEncoding) this.skip();
+		});
+
+		it('should only use UTF-8 decoding with text()', function() {
+			const url = `${base}encoding/euc-jp`;
+			return fetch(url).then(res => {
+				expect(res.status).to.equal(200);
+				return res.text().then(result => {
+					expect(result).to.equal('<?xml version="1.0" encoding="EUC-JP"?><title>\ufffd\ufffd\ufffd\u0738\ufffd</title>');
+				});
+			});
+		});
+
+		it('should support encoding decode, xml dtd detect', function() {
+			const url = `${base}encoding/euc-jp`;
+			return fetch(url).then(res => {
+				expect(res.status).to.equal(200);
+				return res.textConverted().then(result => {
+					expect(result).to.equal('<?xml version="1.0" encoding="EUC-JP"?><title>日本語</title>');
+				});
+			});
+		});
+
+		it('should support encoding decode, content-type detect', function() {
+			const url = `${base}encoding/shift-jis`;
+			return fetch(url).then(res => {
+				expect(res.status).to.equal(200);
+				return res.textConverted().then(result => {
+					expect(result).to.equal('<div>日本語</div>');
+				});
+			});
+		});
+
+		it('should support encoding decode, html5 detect', function() {
+			const url = `${base}encoding/gbk`;
+			return fetch(url).then(res => {
+				expect(res.status).to.equal(200);
+				return res.textConverted().then(result => {
+					expect(result).to.equal('<meta charset="gbk"><div>中文</div>');
+				});
+			});
+		});
+
+		it('should support encoding decode, html4 detect', function() {
+			const url = `${base}encoding/gb2312`;
+			return fetch(url).then(res => {
+				expect(res.status).to.equal(200);
+				return res.textConverted().then(result => {
+					expect(result).to.equal('<meta http-equiv="Content-Type" content="text/html; charset=gb2312"><div>中文</div>');
+				});
+			});
+		});
+
+		it('should default to utf8 encoding', function() {
+			const url = `${base}encoding/utf8`;
+			return fetch(url).then(res => {
+				expect(res.status).to.equal(200);
+				expect(res.headers.get('content-type')).to.be.null;
+				return res.textConverted().then(result => {
+					expect(result).to.equal('中文');
+				});
+			});
+		});
+
+		it('should support uncommon content-type order, charset in front', function() {
+			const url = `${base}encoding/order1`;
+			return fetch(url).then(res => {
+				expect(res.status).to.equal(200);
+				return res.textConverted().then(result => {
+					expect(result).to.equal('中文');
+				});
+			});
+		});
+
+		it('should support uncommon content-type order, end with qs', function() {
+			const url = `${base}encoding/order2`;
+			return fetch(url).then(res => {
+				expect(res.status).to.equal(200);
+				return res.textConverted().then(result => {
+					expect(result).to.equal('中文');
+				});
+			});
+		});
+
+		it('should support chunked encoding, html4 detect', function() {
+			const url = `${base}encoding/chunked`;
+			return fetch(url).then(res => {
+				expect(res.status).to.equal(200);
+				const padding = 'a'.repeat(10);
+				return res.textConverted().then(result => {
+					expect(result).to.equal(`${padding}<meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS" /><div>日本語</div>`);
+				});
+			});
+		});
+
+		it('should only do encoding detection up to 1024 bytes', function() {
+			const url = `${base}encoding/invalid`;
+			return fetch(url).then(res => {
+				expect(res.status).to.equal(200);
+				const padding = 'a'.repeat(1200);
+				return res.textConverted().then(result => {
+					expect(result).to.not.equal(`${padding}中文`);
+				});
+			});
+		});
+	});
+
+	describe('without optional `encoding`', function() {
+		before(function() {
+			if (hasEncoding) this.skip()
+		});
+
+		it('should throw a FetchError if res.textConverted() is called without `encoding` in require cache', () => {
+			const url = `${base}hello`;
+			return fetch(url).then((res) => {
+				return expect(res.textConverted()).to.eventually.be.rejected
+					.and.have.property('message').which.includes('encoding')
+			});
+		});
+	});
+});

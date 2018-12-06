@@ -6,24 +6,39 @@
  * Headers class offers convenient helpers
  */
 
-const common = require('./common.js')
-const checkInvalidHeaderChar = common.checkInvalidHeaderChar
-const checkIsHttpToken = common.checkIsHttpToken
+const invalidTokenRegex = /[^^_`a-zA-Z\-0-9!#$%&'*+.|~]/
+const invalidHeaderCharRegex = /[^\t\x20-\x7e\x80-\xff]/
 
-function sanitizeName (name) {
-  name += ''
-  if (!checkIsHttpToken(name)) {
+function validateName (name) {
+  name = `${name}`
+  if (invalidTokenRegex.test(name)) {
     throw new TypeError(`${name} is not a legal HTTP header name`)
   }
-  return name.toLowerCase()
 }
 
-function sanitizeValue (value) {
-  value += ''
-  if (checkInvalidHeaderChar(value)) {
+function validateValue (value) {
+  value = `${value}`
+  if (invalidHeaderCharRegex.test(value)) {
     throw new TypeError(`${value} is not a legal HTTP header value`)
   }
-  return value
+}
+
+/**
+ * Find the key in the map object given a header name.
+ *
+ * Returns undefined if not found.
+ *
+ * @param   String  name  Header name
+ * @return  String|Undefined
+ */
+function find (map, name) {
+  name = name.toLowerCase()
+  for (const key in map) {
+    if (key.toLowerCase() === name) {
+      return key
+    }
+  }
+  return undefined
 }
 
 const MAP = Symbol('map')
@@ -87,28 +102,23 @@ class Headers {
     } else {
       throw new TypeError('Provided initializer must be an object')
     }
-
-    Object.defineProperty(this, Symbol.toStringTag, {
-      value: 'Headers',
-      writable: false,
-      enumerable: false,
-      configurable: true
-    })
   }
 
   /**
-   * Return first header value given name
+   * Return combined header value given name
    *
    * @param   String  name  Header name
    * @return  Mixed
    */
   get (name) {
-    const list = this[MAP][sanitizeName(name)]
-    if (!list) {
+    name = `${name}`
+    validateName(name)
+    const key = find(this[MAP], name)
+    if (key === undefined) {
       return null
     }
 
-    return list.join(', ')
+    return this[MAP][key].join(', ')
   }
 
   /**
@@ -119,13 +129,13 @@ class Headers {
    * @return  Void
    */
   forEach (callback, thisArg) {
-    let pairs = getHeaderPairs(this)
+    let pairs = getHeaders(this)
     let i = 0
     while (i < pairs.length) {
       const name = pairs[i][0]
       const value = pairs[i][1]
       callback.call(thisArg, value, name, this)
-      pairs = getHeaderPairs(this)
+      pairs = getHeaders(this)
       i++
     }
   }
@@ -138,7 +148,12 @@ class Headers {
    * @return  Void
    */
   set (name, value) {
-    this[MAP][sanitizeName(name)] = [sanitizeValue(value)]
+    name = `${name}`
+    value = `${value}`
+    validateName(name)
+    validateValue(value)
+    const key = find(this[MAP], name)
+    this[MAP][key !== undefined ? key : name] = [value]
   }
 
   /**
@@ -149,12 +164,16 @@ class Headers {
    * @return  Void
    */
   append (name, value) {
-    if (!this.has(name)) {
-      this.set(name, value)
-      return
+    name = `${name}`
+    value = `${value}`
+    validateName(name)
+    validateValue(value)
+    const key = find(this[MAP], name)
+    if (key !== undefined) {
+      this[MAP][key].push(value)
+    } else {
+      this[MAP][name] = [value]
     }
-
-    this[MAP][sanitizeName(name)].push(sanitizeValue(value))
   }
 
   /**
@@ -164,7 +183,9 @@ class Headers {
    * @return  Boolean
    */
   has (name) {
-    return !!this[MAP][sanitizeName(name)]
+    name = `${name}`
+    validateName(name)
+    return find(this[MAP], name) !== undefined
   }
 
   /**
@@ -174,7 +195,12 @@ class Headers {
    * @return  Void
    */
   delete (name) {
-    delete this[MAP][sanitizeName(name)]
+    name = `${name}`
+    validateName(name)
+    const key = find(this[MAP], name)
+    if (key !== undefined) {
+      delete this[MAP][key]
+    }
   };
 
   /**
@@ -218,18 +244,33 @@ class Headers {
 Headers.prototype.entries = Headers.prototype[Symbol.iterator]
 
 Object.defineProperty(Headers.prototype, Symbol.toStringTag, {
-  value: 'HeadersPrototype',
+  value: 'Headers',
   writable: false,
   enumerable: false,
   configurable: true
 })
 
-function getHeaderPairs (headers, kind) {
+Object.defineProperties(Headers.prototype, {
+  get: { enumerable: true },
+  forEach: { enumerable: true },
+  set: { enumerable: true },
+  append: { enumerable: true },
+  has: { enumerable: true },
+  delete: { enumerable: true },
+  keys: { enumerable: true },
+  values: { enumerable: true },
+  entries: { enumerable: true }
+})
+
+function getHeaders (headers, kind) {
+  if (kind == null) kind = 'key+value'
   const keys = Object.keys(headers[MAP]).sort()
   return keys.map(
     kind === 'key'
-      ? k => [k]
-      : k => [k, headers.get(k)]
+      ? k => k.toLowerCase()
+      : kind === 'value'
+        ? k => headers[MAP][k].join(', ')
+        : k => [k.toLowerCase(), headers[MAP][k].join(', ')]
   )
 }
 
@@ -256,7 +297,7 @@ const HeadersIteratorPrototype = Object.setPrototypeOf({
     const target = this[INTERNAL].target
     const kind = this[INTERNAL].kind
     const index = this[INTERNAL].index
-    const values = getHeaderPairs(target, kind)
+    const values = getHeaders(target, kind)
     const len = values.length
     if (index >= len) {
       return {
@@ -265,20 +306,10 @@ const HeadersIteratorPrototype = Object.setPrototypeOf({
       }
     }
 
-    const pair = values[index]
     this[INTERNAL].index = index + 1
 
-    let result
-    if (kind === 'key') {
-      result = pair[0]
-    } else if (kind === 'value') {
-      result = pair[1]
-    } else {
-      result = pair
-    }
-
     return {
-      value: result,
+      value: values[index],
       done: false
     }
   }
@@ -294,3 +325,53 @@ Object.defineProperty(HeadersIteratorPrototype, Symbol.toStringTag, {
 })
 
 module.exports = Headers
+
+/**
+ * Export the Headers object in a form that Node.js can consume.
+ *
+ * @param   Headers  headers
+ * @return  Object
+ */
+module.exports.exportNodeCompatibleHeaders = function exportNodeCompatibleHeaders (headers) {
+  const obj = Object.assign({ __proto__: null }, headers[MAP])
+
+  // http.request() only supports string as Host header. This hack makes
+  // specifying custom Host header possible.
+  const hostHeaderKey = find(headers[MAP], 'Host')
+  if (hostHeaderKey !== undefined) {
+    obj[hostHeaderKey] = obj[hostHeaderKey][0]
+  }
+
+  return obj
+}
+
+/**
+ * Create a Headers object from an object of headers, ignoring those that do
+ * not conform to HTTP grammar productions.
+ *
+ * @param   Object  obj  Object of headers
+ * @return  Headers
+ */
+module.exports.createHeadersLenient = function createHeadersLenient (obj) {
+  const headers = new Headers()
+  for (const name of Object.keys(obj)) {
+    if (invalidTokenRegex.test(name)) {
+      continue
+    }
+    if (Array.isArray(obj[name])) {
+      for (const val of obj[name]) {
+        if (invalidHeaderCharRegex.test(val)) {
+          continue
+        }
+        if (headers[MAP][name] === undefined) {
+          headers[MAP][name] = [val]
+        } else {
+          headers[MAP][name].push(val)
+        }
+      }
+    } else if (!invalidHeaderCharRegex.test(obj[name])) {
+      headers[MAP][name] = [obj[name]]
+    }
+  }
+  return headers
+}

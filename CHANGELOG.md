@@ -69,6 +69,47 @@ Changelog
 
 # 2.x release
 
+## v2.3.0
+
+- New: `AbortSignal` support, with README example.
+- Enhance: handle invalid `Location` header during redirect by rejecting them explicitly with `FetchError`.
+- Fix: update `browser.js` to support react-native environment, where `self` isn't available globally.
+
+## v2.2.1
+
+- Fix: `compress` flag shouldn't overwrite existing `Accept-Encoding` header.
+- Fix: multiple `import` rules, where `PassThrough` etc. doesn't have a named export when using node <10 and `--exerimental-modules` flag.
+- Other: Better README.
+
+## v2.2.0
+
+- Enhance: Support all `ArrayBuffer` view types
+- Enhance: Support Web Workers
+- Enhance: Support Node.js' `--experimental-modules` mode; deprecate `.es.js` file
+- Fix: Add `__esModule` property to the exports object
+- Other: Better example in README for writing response to a file
+- Other: More tests for Agent
+
+## v2.1.2
+
+- Fix: allow `Body` methods to work on `ArrayBuffer`-backed `Body` objects
+- Fix: reject promise returned by `Body` methods when the accumulated `Buffer` exceeds the maximum size
+- Fix: support custom `Host` headers with any casing
+- Fix: support importing `fetch()` from TypeScript in `browser.js`
+- Fix: handle the redirect response body properly
+
+## v2.1.1
+
+Fix packaging errors in v2.1.0.
+
+## v2.1.0
+
+- Enhance: allow using ArrayBuffer as the `body` of a `fetch()` or `Request`
+- Fix: store HTTP headers of a `Headers` object internally with the given case, for compatibility with older servers that incorrectly treated header names in a case-sensitive manner
+- Fix: silently ignore invalid HTTP headers
+- Fix: handle HTTP redirect responses without a `Location` header just like non-redirect responses
+- Fix: include bodies when following a redirection when appropriate
+
 ## v2.0.0
 
 This is a major release. Check [our upgrade guide](https://github.com/bitinn/node-fetch/blob/master/UPGRADE-GUIDE.md) for an overview on some key differences between v1 and v2.
@@ -77,15 +118,20 @@ This is a major release. Check [our upgrade guide](https://github.com/bitinn/nod
 
 - Major: Node.js 0.10.x and 0.12.x support is dropped
 - Major: `require('node-fetch/lib/response')` etc. is now unsupported; use `require('node-fetch').Response` or ES6 module imports
-- Enhance: start testing on Node.js 4, 6, 7
+- Enhance: start testing on Node.js v4.x, v6.x, v8.x LTS, as well as v9.x stable
 - Enhance: use Rollup to produce a distributed bundle (less memory overhead and faster startup)
 - Enhance: make `Object.prototype.toString()` on Headers, Requests, and Responses return correct class strings
 - Other: rewrite in ES2015 using Babel
 - Other: use Codecov for code coverage tracking
+- Other: update package.json script for npm 5
+- Other: `encoding` module is now optional (alpha.7)
+- Other: expose browser.js through package.json, avoid bundling mishaps (alpha.9)
+- Other: allow TypeScript to `import` node-fetch by exposing default (alpha.9)
 
 ### HTTP requests
 
 - Major: overwrite user's `Content-Length` if we can be sure our information is correct (per spec)
+- Fix: errors in a response are caught before the body is accessed
 - Fix: support WHATWG URL objects, created by `whatwg-url` package or `require('url').URL` in Node.js 7+
 
 ### Response and Request classes
@@ -96,6 +142,8 @@ This is a major release. Check [our upgrade guide](https://github.com/bitinn/nod
 - Major: throw error when a `GET` or `HEAD` Request is constructed with a non-null body (per spec)
 - Enhance: add `response.arrayBuffer()` (also applies to Requests)
 - Enhance: add experimental `response.blob()` (also applies to Requests)
+- Enhance: `URLSearchParams` is now accepted as a body
+- Enhance: wrap `response.json()` json parsing error as `FetchError`
 - Fix: fix Request and Response with `null` body
 
 ### Headers class
@@ -113,6 +161,10 @@ This is a major release. Check [our upgrade guide](https://github.com/bitinn/nod
 
 
 # 1.x release
+
+## backport releases (v1.7.0 and beyond)
+
+See [changelog on 1.x branch](https://github.com/bitinn/node-fetch/blob/1.x/CHANGELOG.md) for details.
 
 ## v1.6.3
 

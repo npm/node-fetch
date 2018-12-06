@@ -6,22 +6,25 @@
  * Body interface provides common methods for Request and Response
  */
 
-const Buffer = require('safe-buffer').Buffer
+const Stream = require('stream')
 
 const Blob = require('./blob.js')
 const BUFFER = Blob.BUFFER
-const convert = require('encoding').convert
 const parseJson = require('json-parse-better-errors')
 const FetchError = require('./fetch-error.js')
-const Stream = require('stream')
 
+let convert
+try { convert = require('encoding').convert } catch (e) {}
+
+const INTERNALS = Symbol('Body internals')
+
+// fix an issue where "PassThrough" isn't a named export for node <10
 const PassThrough = Stream.PassThrough
-const DISTURBED = Symbol('disturbed')
 
 /**
- * Body class
+ * Body mixin
  *
- * Cannot use ES6 class because Body must be called with .call().
+ * Ref: https://fetch.spec.whatwg.org/#body
  *
  * @param   Stream  body  Readable stream
  * @param   Object  opts  Response options
@@ -36,28 +39,52 @@ function Body (body, opts) {
   if (body == null) {
     // body is undefined or null
     body = null
-  } else if (typeof body === 'string') {
-    // body is string
+  } else if (isURLSearchParams(body)) {
+    // body is a URLSearchParams
+    body = Buffer.from(body.toString())
   } else if (body instanceof Blob) {
     // body is blob
+    body = body[BUFFER]
   } else if (Buffer.isBuffer(body)) {
-    // body is buffer
+    // body is Buffer
+  } else if (Object.prototype.toString.call(body) === '[object ArrayBuffer]') {
+    // body is ArrayBuffer
+    body = Buffer.from(body)
+  } else if (ArrayBuffer.isView(body)) {
+    // body is ArrayBufferView
+    body = Buffer.from(body.buffer, body.byteOffset, body.byteLength)
   } else if (body instanceof Stream) {
     // body is stream
   } else {
     // none of the above
-    // coerce to string
-    body = String(body)
+    // coerce to string then buffer
+    body = Buffer.from(String(body))
   }
-  this.body = body
-  this[DISTURBED] = false
+  this[INTERNALS] = {
+    body,
+    disturbed: false,
+    error: null
+  }
   this.size = size
   this.timeout = timeout
+
+  if (body instanceof Stream) {
+    body.on('error', err => {
+      const error = err.name === 'AbortError'
+        ? err
+        : new FetchError(`Invalid response body while trying to fetch ${this.url}: ${err.message}`, 'system', err)
+      this[INTERNALS].error = error
+    })
+  }
 }
 
 Body.prototype = {
+  get body () {
+    return this[INTERNALS].body
+  },
+
   get bodyUsed () {
-    return this[DISTURBED]
+    return this[INTERNALS].disturbed
   },
 
   /**
@@ -93,7 +120,13 @@ Body.prototype = {
    * @return  Promise
    */
   json () {
-    return consumeBody.call(this).then(buffer => parseJson(buffer.toString()))
+    return consumeBody.call(this).then((buffer) => {
+      try {
+        return parseJson(buffer.toString())
+      } catch (err) {
+        return Body.Promise.reject(new FetchError(`invalid json response body at ${this.url} reason: ${err.message}`, 'invalid-json'))
+      }
+    })
   },
 
   /**
@@ -123,8 +156,17 @@ Body.prototype = {
   textConverted () {
     return consumeBody.call(this).then(buffer => convertBody(buffer, this.headers))
   }
-
 }
+
+// In browsers, all properties are enumerable.
+Object.defineProperties(Body.prototype, {
+  body: { enumerable: true },
+  bodyUsed: { enumerable: true },
+  arrayBuffer: { enumerable: true },
+  blob: { enumerable: true },
+  json: { enumerable: true },
+  text: { enumerable: true }
+})
 
 Body.mixIn = function (proto) {
   for (const name of Object.getOwnPropertyNames(Body.prototype)) {
@@ -137,30 +179,26 @@ Body.mixIn = function (proto) {
 }
 
 /**
- * Decode buffers into utf-8 string
+ * Consume and convert an entire Body to a Buffer.
+ *
+ * Ref: https://fetch.spec.whatwg.org/#concept-body-consume-body
  *
  * @return  Promise
  */
-function consumeBody (body) {
-  if (this[DISTURBED]) {
-    return Body.Promise.reject(new Error(`body used already for: ${this.url}`))
+function consumeBody () {
+  if (this[INTERNALS].disturbed) {
+    return Body.Promise.reject(new TypeError(`body used already for: ${this.url}`))
   }
 
-  this[DISTURBED] = true
+  this[INTERNALS].disturbed = true
+
+  if (this[INTERNALS].error) {
+    return Body.Promise.reject(this[INTERNALS].error)
+  }
 
   // body is null
   if (this.body === null) {
     return Body.Promise.resolve(Buffer.alloc(0))
-  }
-
-  // body is string
-  if (typeof this.body === 'string') {
-    return Body.Promise.resolve(Buffer.from(this.body))
-  }
-
-  // body is blob
-  if (this.body instanceof Blob) {
-    return Body.Promise.resolve(this.body[BUFFER])
   }
 
   // body is buffer
@@ -190,9 +228,16 @@ function consumeBody (body) {
       }, this.timeout)
     }
 
-    // handle stream error, such as incorrect content-encoding
+    // handle stream errors
     this.body.on('error', err => {
-      reject(new FetchError(`Invalid response body while trying to fetch ${this.url}: ${err.message}`, 'system', err))
+      if (err.name === 'AbortError') {
+        // if the request was aborted, reject with this Error
+        abort = true
+        reject(err)
+      } else {
+        // other errors, such as incorrect content-encoding
+        reject(new FetchError(`Invalid response body while trying to fetch ${this.url}: ${err.message}`, 'system', err))
+      }
     })
 
     this.body.on('data', chunk => {
@@ -216,7 +261,13 @@ function consumeBody (body) {
       }
 
       clearTimeout(resTimeout)
-      resolve(Buffer.concat(accum))
+
+      try {
+        resolve(Buffer.concat(accum))
+      } catch (err) {
+        // handle streams that have accumulated too much data (issue #414)
+        reject(new FetchError(`Could not create Buffer from response body for ${this.url}: ${err.message}`, 'system', err))
+      }
     })
   })
 }
@@ -230,6 +281,10 @@ function consumeBody (body) {
  * @return  String
  */
 function convertBody (buffer, headers) {
+  if (typeof convert !== 'function') {
+    throw new Error('The package `encoding` must be installed to use the textConverted() function')
+  }
+
   const ct = headers.get('content-type')
   let charset = 'utf-8'
   let res, str
@@ -274,10 +329,35 @@ function convertBody (buffer, headers) {
 
   // turn raw buffers into a single utf-8 buffer
   return convert(
-    buffer
-    , 'UTF-8'
-    , charset
+    buffer,
+    'UTF-8',
+    charset
   ).toString()
+}
+
+/**
+ * Detect a URLSearchParams object
+ * ref: https://github.com/bitinn/node-fetch/issues/296#issuecomment-307598143
+ *
+ * @param   Object  obj     Object to detect by type or brand
+ * @return  String
+ */
+function isURLSearchParams (obj) {
+  // Duck-typing as a necessary condition.
+  if (typeof obj !== 'object' ||
+    typeof obj.append !== 'function' ||
+    typeof obj.delete !== 'function' ||
+    typeof obj.get !== 'function' ||
+    typeof obj.getAll !== 'function' ||
+    typeof obj.has !== 'function' ||
+    typeof obj.set !== 'function') {
+    return false
+  }
+
+  // Brand-checking and more duck-typing as optional condition.
+  return obj.constructor.name === 'URLSearchParams' ||
+    Object.prototype.toString.call(obj) === '[object URLSearchParams]' ||
+    typeof obj.sort === 'function'
 }
 
 /**
@@ -304,7 +384,7 @@ exports.clone = function clone (instance) {
     body.pipe(p1)
     body.pipe(p2)
     // set instance body to teed body and return the other teed body
-    instance.body = p1
+    instance[INTERNALS].body = p1
     body = p2
   }
 
@@ -316,13 +396,11 @@ exports.clone = function clone (instance) {
  * specified in the specification:
  * https://fetch.spec.whatwg.org/#concept-bodyinit-extract
  *
- * This function assumes that instance.body is present and non-null.
+ * This function assumes that instance.body is present.
  *
  * @param   Mixed  instance  Response or Request instance
  */
-exports.extractContentType = function extractContentType (instance) {
-  const body = instance.body
-
+exports.extractContentType = function extractContentType (body) {
   // istanbul ignore if: Currently, because of a guard in Request, body
   // can never be null. Included here for completeness.
   if (body === null) {
@@ -331,22 +409,43 @@ exports.extractContentType = function extractContentType (instance) {
   } else if (typeof body === 'string') {
     // body is string
     return 'text/plain;charset=UTF-8'
+  } else if (isURLSearchParams(body)) {
+    // body is a URLSearchParams
+    return 'application/x-www-form-urlencoded;charset=UTF-8'
   } else if (body instanceof Blob) {
     // body is blob
     return body.type || null
   } else if (Buffer.isBuffer(body)) {
     // body is buffer
     return null
+  } else if (Object.prototype.toString.call(body) === '[object ArrayBuffer]') {
+    // body is ArrayBuffer
+    return null
+  } else if (ArrayBuffer.isView(body)) {
+    // body is ArrayBufferView
+    return null
   } else if (typeof body.getBoundary === 'function') {
     // detect form data input from form-data module
     return `multipart/form-data;boundary=${body.getBoundary()}`
-  } else {
+  } else if (body instanceof Stream) {
     // body is stream
     // can't really do much about this
     return null
+  } else {
+    // Body constructor defaults other things to string
+    return 'text/plain;charset=UTF-8'
   }
 }
 
+/**
+ * The Fetch Standard treats this as if "total bytes" is a property on the body.
+ * For us, we have to explicitly get it with a function.
+ *
+ * ref: https://fetch.spec.whatwg.org/#concept-body-total-bytes
+ *
+ * @param   Body    instance   Instance of Body
+ * @return  Number?            Number of bytes, or null if not possible
+ */
 exports.getTotalBytes = function getTotalBytes (instance) {
   const body = instance.body
 
@@ -354,25 +453,13 @@ exports.getTotalBytes = function getTotalBytes (instance) {
   if (body === null) {
     // body is null
     return 0
-  } else if (typeof body === 'string') {
-    // body is string
-    return Buffer.byteLength(body)
-  } else if (body instanceof Blob) {
-    // body is blob
-    return body.size
   } else if (Buffer.isBuffer(body)) {
     // body is buffer
     return body.length
   } else if (body && typeof body.getLengthSync === 'function') {
     // detect form data input from form-data module
-    if ((
-      // 1.x
-      body._lengthRetrievers &&
-      body._lengthRetrievers.length === 0
-    ) || (
-      // 2.x
-      body.hasKnownLength && body.hasKnownLength()
-    )) {
+    if ((body._lengthRetrievers && body._lengthRetrievers.length === 0) || // 1.x
+      (body.hasKnownLength && body.hasKnownLength())) { // 2.x
       return body.getLengthSync()
     }
     return null
@@ -383,19 +470,17 @@ exports.getTotalBytes = function getTotalBytes (instance) {
   }
 }
 
+/**
+ * Write a Body to a Node.js WritableStream (e.g. http.Request) object.
+ *
+ * @param   Body    instance   Instance of Body
+ * @return  Void
+ */
 exports.writeToStream = function writeToStream (dest, instance) {
   const body = instance.body
 
   if (body === null) {
     // body is null
-    dest.end()
-  } else if (typeof body === 'string') {
-    // body is string
-    dest.write(body)
-    dest.end()
-  } else if (body instanceof Blob) {
-    // body is blob
-    dest.write(body[BUFFER])
     dest.end()
   } else if (Buffer.isBuffer(body)) {
     // body is buffer

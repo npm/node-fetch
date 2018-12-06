@@ -3,14 +3,19 @@ const http = require('http');
 const parse = require('url').parse;
 const zlib = require('zlib');
 const stream = require('stream');
-const convert = require('encoding').convert;
 const Multipart = require('parted').multipart;
 
-module.exports = class TestServer {
+let convert;
+try { convert = require('encoding').convert; } catch(e) {}
+
+exports = module.exports = class TestServer {
 	constructor() {
 		this.server = http.createServer(this.router);
 		this.port = 30001;
 		this.hostname = 'localhost';
+		// node 8 default keepalive timeout is 5000ms
+		// make it shorter here as we want to close server quickly at the end of tests
+		this.server.keepAliveTimeout = 1000;
 		this.server.on('error', function(err) {
 			console.log(err.stack);
 		});
@@ -29,7 +34,7 @@ module.exports = class TestServer {
 
 	router(req, res) {
 		let p = parse(req.url).pathname;
-
+		let h = parse(req.url).host;
 		if (p === '/hello') {
 			res.statusCode = 200;
 			res.setHeader('Content-Type', 'text/plain');
@@ -111,6 +116,20 @@ module.exports = class TestServer {
 			res.setHeader('Content-Type', 'text/plain');
 			res.setHeader('Content-Encoding', 'gzip');
 			res.end('fake gzip string');
+		}
+
+		if (p === '/invalid-header') {
+			res.setHeader('Content-Type', 'text/plain');
+			res.writeHead(200);
+			// HACK: add a few invalid headers to the generated header string before
+			// it is actually sent to the socket.
+			res._header = res._header.replace(/\r\n$/, [
+				'Invalid-Header : abc\r\n',
+				'Invalid-Header-Value: \x07k\r\n',
+				'Set-Cookie: \x07k\r\n',
+				'Set-Cookie: \x07kk\r\n',
+			].join('') + '\r\n');
+			res.end('hello world\n');
 		}
 
 		if (p === '/timeout') {
@@ -246,9 +265,22 @@ module.exports = class TestServer {
 			res.end();
 		}
 
-		if (p === '/error/redirect') {
+		if (p === '/redirect/no-location') {
 			res.statusCode = 301;
-			//res.setHeader('Location', '/inspect');
+			res.end();
+		}
+
+		if (p === '/redirect/slow') {
+			res.statusCode = 301;
+			res.setHeader('Location', '/redirect/301');
+			setTimeout(function() {
+				res.end();
+			}, 1000);
+		}
+
+		if (p === '/redirect/slow-stream') {
+			res.statusCode = 301;
+			res.setHeader('Location', '/slow');
 			res.end();
 		}
 
@@ -260,7 +292,7 @@ module.exports = class TestServer {
 
 		if (p === '/redirect/host/same') {
 			res.statusCode = 301;
-			res.setHeader('Location', 'http://localhost:30001/inspect');
+			res.setHeader('Location', `http://localhost:30001/inspect`);
 			res.end();
 		}
 
@@ -272,7 +304,7 @@ module.exports = class TestServer {
 
 		if (p === '/redirect/host/protocolrelative') {
 			res.statusCode = 301;
-			res.setHeader('Location', '//localhost:30001/inspect')
+			res.setHeader('Location', `//localhost:30001/inspect`)
 			res.end()
 		}
 

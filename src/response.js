@@ -6,10 +6,17 @@
  * Response class provides content decoding
  */
 
-const STATUS_CODES = require('http').STATUS_CODES
+const http = require('http')
+
 const Headers = require('./headers.js')
 const Body = require('./body.js')
 const clone = Body.clone
+const extractContentType = Body.extractContentType
+
+const INTERNALS = Symbol('Response internals')
+
+// fix an issue where "STATUS_CODES" aren't a named export for node <10
+const STATUS_CODES = http.STATUS_CODES
 
 /**
  * Response class
@@ -23,25 +30,45 @@ class Response {
     if (!opts) opts = {}
     Body.call(this, body, opts)
 
-    this.url = opts.url
-    this.status = opts.status || 200
-    this.statusText = opts.statusText || STATUS_CODES[this.status]
+    const status = opts.status || 200
+    const headers = new Headers(opts.headers)
 
-    this.headers = new Headers(opts.headers)
+    if (body != null && !headers.has('Content-Type')) {
+      const contentType = extractContentType(body)
+      if (contentType) {
+        headers.append('Content-Type', contentType)
+      }
+    }
 
-    Object.defineProperty(this, Symbol.toStringTag, {
-      value: 'Response',
-      writable: false,
-      enumerable: false,
-      configurable: true
-    })
+    this[INTERNALS] = {
+      url: opts.url,
+      status,
+      statusText: opts.statusText || STATUS_CODES[status],
+      headers
+    }
+  }
+
+  get url () {
+    return this[INTERNALS].url
+  }
+
+  get status () {
+    return this[INTERNALS].status
   }
 
   /**
    * Convenience property representing if the request ended normally
    */
   get ok () {
-    return this.status >= 200 && this.status < 300
+    return this[INTERNALS].status >= 200 && this[INTERNALS].status < 300
+  }
+
+  get statusText () {
+    return this[INTERNALS].statusText
+  }
+
+  get headers () {
+    return this[INTERNALS].headers
   }
 
   /**
@@ -62,8 +89,17 @@ class Response {
 
 Body.mixIn(Response.prototype)
 
+Object.defineProperties(Response.prototype, {
+  url: { enumerable: true },
+  status: { enumerable: true },
+  ok: { enumerable: true },
+  statusText: { enumerable: true },
+  headers: { enumerable: true },
+  clone: { enumerable: true }
+})
+
 Object.defineProperty(Response.prototype, Symbol.toStringTag, {
-  value: 'ResponsePrototype',
+  value: 'Response',
   writable: false,
   enumerable: false,
   configurable: true
